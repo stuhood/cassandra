@@ -121,13 +121,20 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
         return file.getPath();
     }
 
-    public void echoData(DataOutput out) throws IOException
+    /** Copies the row header, up to the beginning of column data. */
+    public void echoHeader(DataOutput out) throws IOException
+    {
+        file.seek(dataStart);
+        while (file.getFilePointer() < columnPosition)
+            out.write(file.readByte());
+    }
+
+    /** Copies the entire content of the row. */
+    public void echoRow(DataOutput out) throws IOException
     {
         file.seek(dataStart);
         while (file.getFilePointer() < finishedAt)
-        {
             out.write(file.readByte());
-        }
     }
 
     public ColumnFamily getColumnFamilyWithColumns() throws IOException
