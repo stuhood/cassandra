@@ -429,7 +429,7 @@ public class CompactionManager implements CompactionManagerMBean
           logger.debug("Expected bloom filter size : " + expectedBloomFilterSize);
 
         SSTableWriter writer;
-        CompactionIterator ci = new CompactionIterator(cfs, sstables, gcBefore, major); // retain a handle so we can call close()
+        CompactionIterator ci = new CompactionIterator(cfs, sstables, gcBefore, major, false);
         Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
         executor.beginCompaction(cfs.columnFamily, ci);
 
@@ -954,7 +954,7 @@ public class CompactionManager implements CompactionManagerMBean
     {
         public ValidationCompactionIterator(ColumnFamilyStore cfs) throws IOException
         {
-            super(cfs, cfs.getSSTables(), getDefaultGcBefore(cfs), true);
+            super(cfs, cfs.getSSTables(), getDefaultGcBefore(cfs), true, false);
         }
 
         @Override
@@ -1114,10 +1114,22 @@ public class CompactionManager implements CompactionManagerMBean
             this.row = row;
         }
 
-        public void write(DataOutput out) throws IOException
+        public void write(DataOutput out, SortedSet<? extends ColumnObserver> observers) throws IOException
         {
-            out.writeLong(row.dataSize);
-            row.echoData(out);
+            if (observers.isEmpty())
+            {
+                // fast path: no need to deserialize at all
+                out.writeLong(row.dataSize);
+                row.echoRow(out);
+                return;
+            }
+
+            // copy header
+            row.echoHeader(out);
+            // deserialize, observe and reserialize
+            Iterator<IColumn> iter = ColumnObserver.Iterator.apply(row, observers);
+            while (iter.hasNext())
+                row.getColumnFamily().getColumnSerializer().serialize(iter.next(), out);
         }
 
         public void update(MessageDigest digest)

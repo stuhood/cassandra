@@ -29,6 +29,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
 import java.util.concurrent.ExecutionException;
+import java.util.TreeSet;
 
 import org.apache.cassandra.CleanupHelper;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -53,11 +54,20 @@ import org.junit.Test;
 
 public class LazilyCompactedRowTest extends CleanupHelper
 {
+    private final TreeSet<ColumnObserver> OBSERVERS = new TreeSet<ColumnObserver>();
+
     private void assertBytes(ColumnFamilyStore cfs, int gcBefore, boolean major) throws IOException
     {
+        assertBytes(cfs, gcBefore, major, false);
+        if (!major)
+            assertBytes(cfs, gcBefore, major, true);
+    }
+
+    private void assertBytes(ColumnFamilyStore cfs, int gcBefore, boolean major, boolean forceDeserialize) throws IOException
+    {
         Collection<SSTableReader> sstables = cfs.getSSTables();
-        CompactionIterator ci1 = new PreCompactingIterator(cfs, sstables, gcBefore, major);
-        CompactionIterator ci2 = new LazyCompactionIterator(cfs, sstables, gcBefore, major);
+        CompactionIterator ci1 = new PreCompactingIterator(cfs, sstables, gcBefore, major, forceDeserialize);
+        LazyCompactionIterator ci2 = new LazyCompactionIterator(cfs, sstables, gcBefore, major);
 
         while (true)
         {
@@ -71,8 +81,8 @@ public class LazilyCompactedRowTest extends CleanupHelper
             AbstractCompactedRow row2 = ci2.next();
             DataOutputBuffer out1 = new DataOutputBuffer();
             DataOutputBuffer out2 = new DataOutputBuffer();
-            row1.write(out1);
-            row2.write(out2);
+            row1.write(out1, OBSERVERS);
+            row2.write(out2, OBSERVERS);
 
             File tmpFile1 = File.createTempFile("lcrt1", null);
             File tmpFile2 = File.createTempFile("lcrt2", null);
@@ -130,8 +140,15 @@ public class LazilyCompactedRowTest extends CleanupHelper
     
     private void assertDigest(ColumnFamilyStore cfs, int gcBefore, boolean major) throws IOException, NoSuchAlgorithmException
     {
+        assertDigest(cfs, gcBefore, major, false);
+        if (!major)
+            assertDigest(cfs, gcBefore, major, true);
+    }
+
+    private void assertDigest(ColumnFamilyStore cfs, int gcBefore, boolean major, boolean forceDeserialize) throws IOException, NoSuchAlgorithmException
+    {
         Collection<SSTableReader> sstables = cfs.getSSTables();
-        CompactionIterator ci1 = new PreCompactingIterator(cfs, sstables, gcBefore, major);
+        CompactionIterator ci1 = new PreCompactingIterator(cfs, sstables, gcBefore, major, forceDeserialize);
         CompactionIterator ci2 = new LazyCompactionIterator(cfs, sstables, gcBefore, major);
 
         while (true)
@@ -307,7 +324,7 @@ public class LazilyCompactedRowTest extends CleanupHelper
 
         public LazyCompactionIterator(ColumnFamilyStore cfStore, Iterable<SSTableReader> sstables, int gcBefore, boolean major) throws IOException
         {
-            super(cfStore, sstables, gcBefore, major);
+            super(cfStore, sstables, gcBefore, major, true);
             this.cfStore = cfStore;
         }
 
@@ -321,17 +338,19 @@ public class LazilyCompactedRowTest extends CleanupHelper
     private static class PreCompactingIterator extends CompactionIterator
     {
         private final ColumnFamilyStore cfStore;
+        private final boolean forceDeserialize;
 
-        public PreCompactingIterator(ColumnFamilyStore cfStore, Iterable<SSTableReader> sstables, int gcBefore, boolean major) throws IOException
+        public PreCompactingIterator(ColumnFamilyStore cfStore, Iterable<SSTableReader> sstables, int gcBefore, boolean major, boolean forceDeserialize) throws IOException
         {
-            super(cfStore, sstables, gcBefore, major);
+            super(cfStore, sstables, gcBefore, major, forceDeserialize);
             this.cfStore = cfStore;
+            this.forceDeserialize = forceDeserialize;
         }
 
         @Override
         protected AbstractCompactedRow getCompactedRow()
         {
-            return new PrecompactedRow(cfStore, rows, true, Integer.MAX_VALUE, true);
+            return new PrecompactedRow(cfStore, rows, true, Integer.MAX_VALUE, forceDeserialize);
         }
     }
 }

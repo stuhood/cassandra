@@ -24,6 +24,7 @@ package org.apache.cassandra.io;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.security.MessageDigest;
+import java.util.SortedSet;
 
 import org.apache.cassandra.db.DecoratedKey;
 
@@ -42,9 +43,10 @@ public abstract class AbstractCompactedRow
     }
 
     /**
-     * write the row (size + column index + filter + column data, but NOT row key) to @param out
+     * write the row (size + column index + filter + column data, but NOT row key) to @param out, alerting interested
+     * observers when relevant columns are encountered.
      */
-    public abstract void write(DataOutput out) throws IOException;
+    public abstract void write(DataOutput out, SortedSet<? extends ColumnObserver> observers) throws IOException;
 
     /**
      * update @param digest with the data bytes of the row (not including row key or row size)

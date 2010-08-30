@@ -28,6 +28,7 @@ import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.SortedSet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,7 @@ public class PrecompactedRow extends AbstractCompactedRow
 
     private final DataOutputBuffer buffer;
     private final DataOutputBuffer headerBuffer;
+    private final ColumnFamily row;
     private int columnCount = 0;
 
     public PrecompactedRow(DecoratedKey key, DataOutputBuffer buffer)
@@ -56,8 +58,12 @@ public class PrecompactedRow extends AbstractCompactedRow
         super(key);
         this.buffer = buffer;
         this.headerBuffer = new DataOutputBuffer();
+        this.row = null;
     }
 
+    /**
+     * @param forceDeserialize True if the content of the row should be preserved in deserialized form post-compaction.
+     */
     public PrecompactedRow(ColumnFamilyStore cfStore, List<SSTableIdentityIterator> rows, boolean major, int gcBefore, boolean forceDeserialize)
     {
         super(rows.get(0).getKey());
@@ -71,7 +77,7 @@ public class PrecompactedRow extends AbstractCompactedRow
         }
         boolean shouldPurge = major || !cfStore.isKeyInRemainingSSTables(key, sstables);
 
-        if (rows.size() > 1 || shouldPurge || !rows.get(0).sstable.descriptor.isLatestVersion || forceDeserialize)
+        if (forceDeserialize || shouldPurge || rows.size() > 1 || !rows.get(0).sstable.descriptor.isLatestVersion)
         {
             ColumnFamily cf = null;
             for (SSTableIdentityIterator row : rows)
@@ -96,6 +102,7 @@ public class PrecompactedRow extends AbstractCompactedRow
                 }
             }
             ColumnFamily cfPurged = shouldPurge ? ColumnFamilyStore.removeDeleted(cf, gcBefore) : cf;
+            row = forceDeserialize ? cfPurged : null;
             if (cfPurged == null)
                 return;
             
@@ -107,18 +114,26 @@ public class PrecompactedRow extends AbstractCompactedRow
             assert rows.size() == 1;
             try
             {
-                rows.get(0).echoData(buffer);
+                rows.get(0).echoRow(buffer);
                 columnCount = rows.get(0).columnCount;
             }
             catch (IOException e)
             {
                 throw new IOError(e);
             }
+            row = null;
         }
     }
 
-    public void write(DataOutput out) throws IOException
+    public void write(DataOutput out, SortedSet<? extends ColumnObserver> observers) throws IOException
     {
+        assert row != null || observers.isEmpty() :
+            "Must preserveValues to observe content of " + PrecompactedRow.class;
+        
+        // look up each observed column: klogn for k observers
+        for (ColumnObserver observer : observers)
+            observer.maybeObserve(row);
+
         out.writeLong(headerBuffer.getLength() + buffer.getLength());
         out.write(headerBuffer.getData(), 0, headerBuffer.getLength());
         out.write(buffer.getData(), 0, buffer.getLength());

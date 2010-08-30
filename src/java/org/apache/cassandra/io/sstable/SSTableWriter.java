@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.google.common.collect.Sets;
 
@@ -41,6 +42,7 @@ import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.marshal.AbstractCommutativeType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.AbstractCompactedRow;
+import org.apache.cassandra.io.ColumnObserver;
 import org.apache.cassandra.io.ICompactionInfo;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileMark;
@@ -59,6 +61,7 @@ public class SSTableWriter extends SSTable
     private IndexWriter iwriter;
     private SegmentedFile.Builder dbuilder;
     private final BufferedRandomAccessFile dataFile;
+    private final TreeSet<ColumnObserver> observers;
     private DecoratedKey lastWrittenKey;
     private FileMark dataMark;
 
@@ -78,6 +81,15 @@ public class SSTableWriter extends SSTable
         iwriter = new IndexWriter(descriptor, partitioner, keyCount);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
         dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", DatabaseDescriptor.getInMemoryCompactionLimit(), true);
+
+        // the set of required components
+        components.add(Component.DATA);
+        components.add(Component.FILTER);
+        components.add(Component.PRIMARY_INDEX);
+        components.add(Component.STATS);
+
+        // TODO: observer per index
+        observers = new TreeSet<ColumnObserver>();
     }
     
     public void mark()
@@ -129,7 +141,7 @@ public class SSTableWriter extends SSTable
     {
         long currentPosition = beforeAppend(row.key);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
-        row.write(dataFile);
+        row.write(dataFile, observers);
         estimatedRowSize.add(dataFile.getFilePointer() - currentPosition);
         estimatedColumnCount.add(row.columnCount());
         afterAppend(row.key, currentPosition);
@@ -143,6 +155,9 @@ public class SSTableWriter extends SSTable
         // write placeholder for the row size, since we don't know it yet
         long sizePosition = dataFile.getFilePointer();
         dataFile.writeLong(-1);
+        // allow observers to observe content
+        for (ColumnObserver observer : observers)
+            observer.maybeObserve(cf);
         // write out row data
         int columnCount = ColumnFamily.serializer().serializeWithIndexes(cf, dataFile);
         // seek back and write the row size (not including the size Long itself)
@@ -158,6 +173,10 @@ public class SSTableWriter extends SSTable
 
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
+        // FIXME: terrible hack (but BMT is a terrible hack... they deserve eachother)
+        if (!observers.isEmpty())
+            throw new RuntimeException("FIXME: Secondary indexing not supported with BMT.");
+
         long currentPosition = beforeAppend(decoratedKey);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
         assert value.remaining() > 0;
@@ -375,6 +394,7 @@ public class SSTableWriter extends SSTable
                 iwriter.afterAppend(key, rowPosition);
 
                 // seek to next key
+                // FIXME: observe for bitmap secondary indexes
                 long dataSize = SSTableReader.readRowSize(dfile, desc);
                 rowPosition = dfile.getFilePointer() + dataSize;
                 
