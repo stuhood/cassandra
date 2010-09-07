@@ -302,7 +302,7 @@ public class CompactionManager implements CompactionManagerMBean
           logger.debug("Expected bloom filter size : " + expectedBloomFilterSize);
 
         SSTableWriter writer;
-        CompactionIterator ci = new CompactionIterator(cfs, sstables, gcBefore, major, false);
+        CompactionIterator ci = new CompactionIterator(cfs, sstables, gcBefore, major, cfs.hasBitmapIndexes());
         Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
         executor.beginCompaction(cfs, ci);
 
@@ -400,6 +400,7 @@ public class CompactionManager implements CompactionManagerMBean
             SSTableWriter writer = null;
             SSTableScanner scanner = sstable.getDirectScanner(CompactionIterator.FILE_BUFFER_SIZE);
             SortedSet<ByteBuffer> indexedColumns = cfs.getIndexedColumns();
+            boolean needsObservation = cfs.hasBitmapIndexes();
             executor.beginCompaction(cfs, new CleanupInfo(sstable, scanner));
             try
             {
@@ -409,6 +410,7 @@ public class CompactionManager implements CompactionManagerMBean
                     if (Range.isTokenInRanges(row.getKey().token, ranges))
                     {
                         writer = maybeCreateWriter(cfs, compactionFileLocation, expectedBloomFilterSize, writer);
+                        assert !needsObservation : "FIXME: Need an echoing, observing implementation.";
                         writer.append(new EchoedRow(row));
                         totalkeysWritten++;
                     }
