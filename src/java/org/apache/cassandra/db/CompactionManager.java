@@ -262,8 +262,8 @@ public class CompactionManager implements CompactionManagerMBean
         String cfname = null;
         for (String filename : filenames)
         {
-            Pair<Descriptor, String> p = Descriptor.fromFilename(directory, filename.trim());
-            if (!p.right.equals(Component.DATA.name()))
+            Pair<Descriptor, Component> p = Component.fromFilename(directory, filename.trim());
+            if (!p.right.equals(Component.DATA))
             {
                 throw new IllegalArgumentException(filename + " does not appear to be a data file");
             }
@@ -429,7 +429,7 @@ public class CompactionManager implements CompactionManagerMBean
           logger.debug("Expected bloom filter size : " + expectedBloomFilterSize);
 
         SSTableWriter writer;
-        CompactionIterator ci = new CompactionIterator(cfs, sstables, gcBefore, major, false);
+        CompactionIterator ci = new CompactionIterator(cfs, sstables, gcBefore, major, cfs.hasBitmapIndexes());
         Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
         executor.beginCompaction(cfs.columnFamily, ci);
 
@@ -685,7 +685,8 @@ public class CompactionManager implements CompactionManagerMBean
             SSTableWriter writer = null;
             SSTableScanner scanner = sstable.getDirectScanner(CompactionIterator.FILE_BUFFER_SIZE);
             SortedSet<ByteBuffer> indexedColumns = cfs.getIndexedColumns();
-            executor.beginCompaction(cfs.columnFamily, new CleanupInfo(sstable, scanner));
+            boolean needsObservation = cfs.hasBitmapIndexes();
+            executor.beginCompaction(cfs, new CleanupInfo(sstable, scanner));
             try
             {
                 while (scanner.hasNext())
@@ -694,6 +695,7 @@ public class CompactionManager implements CompactionManagerMBean
                     if (Range.isTokenInRanges(row.getKey().token, ranges))
                     {
                         writer = maybeCreateWriter(cfs, compactionFileLocation, expectedBloomFilterSize, writer);
+                        assert !needsObservation : "FIXME: Need an echoing, observing implementation.";
                         writer.append(getCompactedRow(row, cfs, sstable.descriptor, true));
                         totalkeysWritten++;
                     }

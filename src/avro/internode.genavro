@@ -25,7 +25,8 @@ protocol InterNode {
     @aliases(["org.apache.cassandra.config.avro.IndexType"])
     @namespace("org.apache.cassandra.db.migration.avro")
     enum IndexType {
-        KEYS
+        KEYS,
+        KEYS_BITMAP
     }
 
     @aliases(["org.apache.cassandra.config.avro.ColumnDef"])

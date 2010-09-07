@@ -21,12 +21,7 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 import com.google.common.collect.Sets;
 
@@ -35,6 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -46,6 +42,7 @@ import org.apache.cassandra.io.AbstractCompactedRow;
 import org.apache.cassandra.io.ColumnObserver;
 import org.apache.cassandra.io.ICompactionInfo;
 import org.apache.cassandra.io.sstable.bitidx.BitmapIndexWriter;
+import org.apache.cassandra.io.sstable.bitidx.BitmapIndexReader;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
@@ -55,6 +52,9 @@ import org.apache.cassandra.streaming.OperationType;
 import org.apache.cassandra.utils.BloomFilter;
 import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.FBUtilities;
+
+// yuck
+import org.apache.cassandra.thrift.IndexType;
 
 public class SSTableWriter extends SSTable
 {
@@ -91,11 +91,21 @@ public class SSTableWriter extends SSTable
         components.add(Component.PRIMARY_INDEX);
         components.add(Component.STATS);
 
-        // TODO: observer per index
-        observers = new TreeSet<ColumnObserver>();
+        // open writers for each bitmap secondary index
+        Component.IdGenerator gen = new Component.IdGenerator();
         secindexes = new ArrayList<BitmapIndexWriter>();
-        for (BitmapIndexWriter secindex : secindexes)
-            observers.add(secindex.observer());
+        observers = new TreeSet<ColumnObserver>();
+        for (ColumnDefinition cdef : metadata.column_metadata.values())
+        {
+            if (cdef.index_type != IndexType.KEYS_BITMAP)
+                continue;
+
+            // assign a component id, and open a writer for the index
+            BitmapIndexWriter bmiw = new BitmapIndexWriter(descriptor, gen, cdef, metadata.comparator);
+            components.add(bmiw.component);
+            observers.add(bmiw.observer);
+            secindexes.add(bmiw);
+        }
     }
     
     public void mark()
@@ -209,17 +219,22 @@ public class SSTableWriter extends SSTable
 
         // write sstable statistics
         writeStatistics(descriptor, estimatedRowSize, estimatedColumnCount);
-        // close secondary indexes: TODO: once they have state, attach it
-        for (BitmapIndexWriter secindex : secindexes)
+        // close secondary indexes
+        for (BitmapIndexWriter secindex : this.secindexes)
             secindex.close();
 
         // remove the 'tmp' marker from all components
         final Descriptor newdesc = rename(descriptor, components);
 
+        // open readers for each secondary index
+        Map<byte[],BitmapIndexReader> secindexes = new TreeMap<byte[],BitmapIndexReader>(metadata.comparator);
+        for (BitmapIndexWriter secindex : this.secindexes)
+            secindexes.put(secindex.name(), BitmapIndexReader.open(newdesc, secindex.component));
+
         // finalize in-memory state for the reader
         SegmentedFile ifile = iwriter.builder.complete(newdesc.filenameFor(SSTable.COMPONENT_INDEX));
         SegmentedFile dfile = dbuilder.complete(newdesc.filenameFor(SSTable.COMPONENT_DATA));
-        SSTableReader sstable = SSTableReader.internalOpen(newdesc, components, metadata, partitioner, ifile, dfile, iwriter.summary, iwriter.bf, maxDataAge, estimatedRowSize, estimatedColumnCount);
+        SSTableReader sstable = SSTableReader.internalOpen(newdesc, components, metadata, partitioner, ifile, dfile, iwriter.summary, iwriter.bf, maxDataAge, estimatedRowSize, estimatedColumnCount, secindexes);
         iwriter = null;
         dbuilder = null;
         return sstable;
