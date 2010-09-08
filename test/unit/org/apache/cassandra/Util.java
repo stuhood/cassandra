@@ -51,6 +51,11 @@ public class Util
         return StorageService.getPartitioner().decorateKey(ByteBuffer.wrap(key.getBytes(UTF_8)));
     }
 
+    public static Column column(String name, String value)
+    {
+        return column(name, value, System.currentTimeMillis());
+    }
+
     public static Column column(String name, String value, long timestamp)
     {
         return new Column(ByteBuffer.wrap(name.getBytes()), ByteBuffer.wrap(value.getBytes()), timestamp);
