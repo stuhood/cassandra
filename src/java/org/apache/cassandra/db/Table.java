@@ -47,6 +47,7 @@ import org.apache.cassandra.io.ICompactionInfo;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.SSTableDeletingReference;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.thrift.IndexType;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.service.StorageService;
@@ -370,7 +371,7 @@ public class Table
             }
 
             SortedSet<ByteBuffer> mutatedIndexedColumns = null;
-            for (ByteBuffer column : cfs.getIndexedColumns())
+            for (ByteBuffer column : cfs.getIndexedColumns(IndexType.KEYS))
             {
                 if (cf.getColumnNames().contains(column) || cf.isMarkedForDelete())
                 {
@@ -481,7 +482,7 @@ public class Table
                 continue; // null column == row deletion
 
             DecoratedKey<LocalToken> valueKey = cfs.getIndexKeyFor(columnName, column.value());
-            ColumnFamily cfi = cfs.newIndexedColumnFamily(columnName);
+            ColumnFamily cfi = cfs.newIndexColumnFamily(columnName);
             if (column instanceof ExpiringColumn)
             {
                 ExpiringColumn ec = (ExpiringColumn)column;
@@ -493,7 +494,7 @@ public class Table
             }
             if (logger.isDebugEnabled())
                 logger.debug("applying index row {}:{}", valueKey, cfi);
-            Memtable fullMemtable = cfs.getIndexedColumnFamilyStore(columnName).apply(valueKey, cfi);
+            Memtable fullMemtable = cfs.getIndexColumnFamilyStore(columnName).apply(valueKey, cfi);
             if (fullMemtable != null)
                 fullMemtables = addFullMemtable(fullMemtables, fullMemtable);
         }
@@ -509,9 +510,9 @@ public class Table
                 if (column.isMarkedForDelete())
                     continue;
                 DecoratedKey<LocalToken> valueKey = cfs.getIndexKeyFor(columnName, column.value());
-                ColumnFamily cfi = cfs.newIndexedColumnFamily(columnName);
+                ColumnFamily cfi = cfs.newIndexColumnFamily(columnName);
                 cfi.addTombstone(key, localDeletionTime, column.timestamp());
-                Memtable fullMemtable = cfs.getIndexedColumnFamilyStore(columnName).apply(valueKey, cfi);
+                Memtable fullMemtable = cfs.getIndexColumnFamilyStore(columnName).apply(valueKey, cfi);
                 if (logger.isDebugEnabled())
                     logger.debug("applying index tombstones {}:{}", valueKey, cfi);
                 if (fullMemtable != null)

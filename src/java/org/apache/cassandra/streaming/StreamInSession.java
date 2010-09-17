@@ -34,6 +34,7 @@ import org.apache.cassandra.db.CompactionManager;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.thrift.IndexType;
 import org.apache.cassandra.utils.Pair;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
@@ -156,8 +157,11 @@ public class StreamInSession
             // build secondary indexes
             for (Map.Entry<ColumnFamilyStore, List<SSTableReader>> entry : cfstores.entrySet())
             {
-                if (entry.getKey() != null && !entry.getKey().getIndexedColumns().isEmpty())
-                    entry.getKey().buildSecondaryIndexes(entry.getValue(), entry.getKey().getIndexedColumns());
+                if (entry.getKey() == null)
+                    continue;
+                Set<ByteBuffer> indexed = entry.getKey().getIndexedColumns(IndexType.KEYS);
+                if (!indexed.isEmpty())
+                    entry.getKey().buildSecondaryIndexes(entry.getValue(), indexed);
             }
 
             // send reply to source that we're done

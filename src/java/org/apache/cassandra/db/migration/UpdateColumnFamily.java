@@ -8,6 +8,8 @@ import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.migration.avro.ColumnDef;
+import org.apache.cassandra.thrift.CfDef;
+import org.apache.cassandra.thrift.IndexType;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
 
