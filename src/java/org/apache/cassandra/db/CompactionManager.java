@@ -445,11 +445,11 @@ public class CompactionManager implements CompactionManagerMBean
             }
 
             // flush to ensure we don't lose the tombstones on a restart, since they are not commitlog'd
-            for (ByteBuffer columnName : cfs.getIndexedColumns())
+            for (ColumnFamilyStore icfs : cfs.getIndexColumnFamilyStores())
             {
                 try
                 {
-                    cfs.getIndexedColumnFamilyStore(columnName).forceBlockingFlush();
+                    icfs.forceBlockingFlush();
                 }
                 catch (ExecutionException e)
                 {
@@ -581,7 +581,7 @@ public class CompactionManager implements CompactionManagerMBean
         return tablePairs;
     }
     
-    public Future submitIndexBuild(final ColumnFamilyStore cfs, final Table.IndexBuilder builder)
+    public Future submitIndexBuild(final ColumnFamilyStore cfs, final Table.KeysIndexBuilder builder)
     {
         Runnable runnable = new Runnable()
         {
