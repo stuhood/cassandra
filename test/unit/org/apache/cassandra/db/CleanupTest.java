@@ -96,8 +96,7 @@ public class CleanupTest extends CleanupHelper
         rows = cfs.getRangeSlice(null, Util.range("", ""), 1000, new IdentityQueryFilter());
         assertEquals(LOOPS, rows.size());
 
-        ColumnFamilyStore cfi = cfs.getIndexedColumnFamilyStore(COLUMN);
-        assertTrue(cfi.isIndexBuilt());
+        assertTrue(cfs.getSecondaryIndex(COLUMN).isBuilt());
 
         // verify we get it back w/ index query too
         IndexExpression expr = new IndexExpression(COLUMN, IndexOperator.EQ, VALUE);

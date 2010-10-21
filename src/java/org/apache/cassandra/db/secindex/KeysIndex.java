@@ -19,13 +19,22 @@
 package org.apache.cassandra.db.secindex;
 
 import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.Future;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.io.ICompactionInfo;
+import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
 import org.apache.cassandra.thrift.IndexType;
+import org.apache.cassandra.utils.FBUtilities;
 
 /**
  * Implements a secondary index for a column family using a second column family in which the row
@@ -33,21 +42,62 @@ import org.apache.cassandra.thrift.IndexType;
  */
 public class KeysIndex extends SecondaryIndex
 {
-    // the partitioner for the base data
-    private final IPartitioner basep;
-    // the index column family store
+    static final Logger logger = LoggerFactory.getLogger(KeysIndex.class);
+
+    // the base column family store
+    private final ColumnFamilyStore cfs;
+    // the index column family store // TODO: create privately
     private final ColumnFamilyStore icfs;
 
-    public KeysIndex(ColumnFamilyStore icfs, IPartitioner basep)
+    public KeysIndex(ColumnDefinition cdef, ColumnFamilyStore cfs, ColumnFamilyStore icfs)
     {
-        super();
-        this.icfs = icfs;
-        this.basep = basep;
+        super(cdef);
+        this.cfs = cfs;
+        AbstractType columnComparator = cfs.partitioner.equivalentType();
+        CFMetaData icfm = CFMetaData.newIndexMetadata(cfs.table.name, cfs.columnFamily, cdef, columnComparator);
+        this.icfs = ColumnFamilyStore.createColumnFamilyStore(cfs.table,
+                                                              icfm.cfName,
+                                                              new LocalPartitioner(cfs.metadata.getColumn_metadata().get(cdef.name).validator),
+                                                              icfm);
     }
 
-    public IndexType type()
+    public String getName()
     {
-        return IndexType.KEYS;
+        return icfs.columnFamily;
+    }
+
+    @Override
+    public void initialize()
+    {
+        if (SystemTable.isIndexBuilt(cfs.table.name, icfs.metadata.cfName))
+            return;
+        // record that the column is supposed to be indexed, before we start building it
+        // (so we don't omit indexing writes that happen during build process)
+        logger.info("Creating index {}.{}", cfs.table, icfs.metadata.cfName);
+        try
+        {
+            cfs.forceBlockingFlush();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+        cfs.rebuildSecondaryIndex(this, cfs.getSSTables());
+        logger.info("Index {} complete", icfs.metadata.cfName);
+        SystemTable.setIndexBuilt(cfs.table.name, icfs.metadata.cfName);
+    }
+
+    public void purge()
+    {
+        icfs.unregisterMBean();
+        SystemTable.setIndexRemoved(cfs.metadata.tableName, cfs.metadata.cfName);
+        icfs.removeAllSSTables();
+    }
+
+    @Override
+    public boolean isBuilt()
+    {
+        return SystemTable.isIndexBuilt(icfs.table.name, icfs.columnFamily);
     }
 
     public double selectivity(IndexExpression expr)
@@ -67,11 +117,47 @@ public class KeysIndex extends SecondaryIndex
 
     public KeysIterator iterator(AbstractBounds range, IndexExpression expr, ByteBuffer startKey)
     {
-        return new KeysIterator(icfs, basep, range, icfs.partitioner.decorateKey(expr.value), startKey);
+        return new KeysIterator(icfs, cfs.partitioner, range, icfs.partitioner.decorateKey(expr.value), startKey);
     }
 
     public ColumnFamilyStore getIndexCFS()
     {
         return icfs;
     }
+
+    /**
+     * Rebuild all Keys indexes that were affected by the addition of the given sstables.
+     */
+    public static void rebuild(ColumnFamilyStore cfs, Collection<SecondaryIndex> indexes, Collection<SSTableReader> sstables)
+    {
+        // collect keys indexes
+        TreeSet<ByteBuffer> names = new TreeSet<ByteBuffer>(cfs.metadata.comparator);
+        List<SecondaryIndex> kindexes = new ArrayList<SecondaryIndex>();
+        for (SecondaryIndex index : indexes)
+        {
+            if (index.cdef.index_type != IndexType.KEYS)
+                continue;
+            names.add(index.cdef.name);
+            kindexes.add(index);
+        }
+        if (kindexes.isEmpty())
+            // no keys indexes
+            return;
+
+        // rebuild each index for all affected keys
+        Table.KeysIndexBuilder builder = cfs.table.createIndexBuilder(cfs, names, new ReducingKeyIterator(sstables));
+        logger.debug("Submitting index build to compactionmanager for {}", builder);
+        Future future = CompactionManager.instance.submitIndexBuild(cfs, builder);
+        try
+        {
+            future.get();
+            for (SecondaryIndex kindex : kindexes)
+                kindex.getIndexCFS().forceBlockingFlush();
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
 }

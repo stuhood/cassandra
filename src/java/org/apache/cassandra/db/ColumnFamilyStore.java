@@ -191,7 +191,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         for (ColumnDefinition cdef : metadata.getColumn_metadata().values())
             if (cdef.getIndexType() != null && !indexedColumns.containsKey(cdef.name))
-                addIndex(cdef);
+                indexedColumns.putIfAbsent(cdef.name, SecondaryIndex.open(cdef, this));
     }
 
     private ColumnFamilyStore(Table table, String columnFamilyName, IPartitioner partitioner, int generation, CFMetaData metadata)
@@ -215,11 +215,22 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         if (logger.isDebugEnabled())
             logger.debug("Starting CFS {}", columnFamily);
 
-        // scan for sstables corresponding to this cf and load them
+        // scan for sstables for this cf, and perform any preload tasks
+        Map<Descriptor,Set<Component>> descriptors = files(table.name, columnFamilyName, false);
+        try
+        {
+            descriptors = KeysBitmapIndex.preload(this, descriptors);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+
+        // load sstables
         ssTables = new SSTableTracker(table.name, columnFamilyName);
         Set<DecoratedKey> savedKeys = readSavedCache(DatabaseDescriptor.getSerializedKeyCachePath(table.name, columnFamilyName));
         List<SSTableReader> sstables = new ArrayList<SSTableReader>();
-        for (Map.Entry<Descriptor,Set<Component>> sstableFiles : files(table.name, columnFamilyName, false).entrySet())
+        for (Map.Entry<Descriptor,Set<Component>> sstableFiles : descriptors.entrySet())
         {
             SSTableReader sstable;
             try
@@ -248,7 +259,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 // TODO: push private CFS creation into secindex.KeysIndex
                 addIndex(info);
             else if (info.index_type == IndexType.KEYS_BITMAP)
-                indexedColumns.put(info.name, new KeysBitmapIndex(this));
+                indexedColumns.put(info.name, SecondaryIndex.open(info, this));
         }
 
         // register the mbean
@@ -349,9 +360,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return metadata.getDefaultValidator().isCommutative();
     }
 
+    /** TODO: Adds a single new index at a time. */
     public void addIndex(final ColumnDefinition info)
     {
-        assert info.getIndexType() != null;
+        assert info.getIndexType() == IndexType.KEYS;
 
         // create the index CFS
         IPartitioner rowPartitioner = StorageService.getPartitioner();
@@ -363,11 +375,11 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                                                                  indexedCfMetadata.cfName,
                                                                                  new LocalPartitioner(metadata.getColumn_metadata().get(info.name).validator),
                                                                                  indexedCfMetadata);
-
+        
         // link in indexedColumns.  this means that writes will add new data to the index immediately,
         // so we don't have to lock everything while we do the build.  it's up to the operator to wait
         // until the index is actually built before using in queries.
-        if (indexedColumns.putIfAbsent((info.name, new KeysIndex(indexedCfs, rowPartitioner)) != null)
+        if (indexedColumns.putIfAbsent(info.name, new KeysIndex(indexedCfs, rowPartitioner)) != null)
             return;
 
         // if we're just linking in the index to indexedColumns on an already-built index post-restart, we're done
@@ -376,6 +388,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
         // build it asynchronously; addIndex gets called by CFS open and schema update, neither of which
         // we want to block for a long period.  (actual build is serialized on CompactionManager.)
+        final List<SSTableReader> sstables = getSSTables();
         Runnable runnable = new Runnable()
         {
             public void run()
@@ -393,7 +406,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 {
                     throw new AssertionError(e);
                 }
-                buildSecondaryIndexes(getSSTables(), FBUtilities.singleton(info.name));
+                rebuildSecondaryIndex(index, sstables);
                 logger.info("Index {} complete", indexedCfMetadata.cfName);
                 SystemTable.setIndexBuilt(table.name, indexedCfMetadata.cfName);
             }
@@ -401,29 +414,21 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         new Thread(runnable, "Create index " + indexedCfMetadata.cfName).start();
     }
 
-    public void buildSecondaryIndexes(Collection<SSTableReader> sstables, SortedSet<ByteBuffer> columns)
+    /**
+     * Rebuilds all secondary indexes affected by the addition of the given sstables.
+     */
+    public void rebuildSecondaryIndexes(Collection<SSTableReader> sstables)
     {
-        logger.debug("Submitting index build to compactionmanager");
-        Table.IndexBuilder builder = table.createIndexBuilder(this, columns, new ReducingKeyIterator(sstables));
-        Future future = CompactionManager.instance.submitIndexBuild(this, builder);
-        try
-        {
-            future.get();
-            for (ByteBuffer column : columns)
-                getIndexColumnFamilyStore(column).forceBlockingFlush();
-        }
-        catch (InterruptedException e)
-        {
-            throw new AssertionError(e);
-        }
-        catch (ExecutionException e)
-        {
-            throw new RuntimeException(e);
-        }
+        KeysIndex.rebuild(this, indexedColumns.values(), sstables);
+    }
+
+    public void rebuildSecondaryIndex(SecondaryIndex index, Collection<SSTableReader> sstables)
+    {
+        KeysIndex.rebuild(this, Collections.singletonList(index), sstables);
     }
 
     // called when dropping or renaming a CF. Performs mbean housekeeping and invalidates CFS to other operations.
-    void unregisterMBean()
+    public void unregisterMBean()
     {
         try
         {
@@ -2143,30 +2148,14 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     }
 
     /**
-     * Check if index is already built for current store
-     * @return true if built, false otherwise
-     */
-    public boolean isIndexBuilt()
-    {
-        return SystemTable.isIndexBuilt(table.name, columnFamily);
-    }
-
-    /**
-     * Returns a list of the names of the built column indexes for current store
-     * @return list of the index names
+     * @return A list of the names of the built column indexes for current store
      */
     public List<String> getBuiltIndexes()
     {
         List<String> indexes = new ArrayList<String>();
-
-        for (ColumnFamilyStore cfs : indexedColumns.values())
-        {
-            if (cfs.isIndexBuilt())
-            {
-                indexes.add(cfs.columnFamily); // store.columnFamily represents a name of the index
-            }
-        }
-
+        for (SecondaryIndex sidx : indexedColumns.values())
+            if (sidx.isBuilt())
+                indexes.add(sidx.getName()); 
         return indexes;
     }
 

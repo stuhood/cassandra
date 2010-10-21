@@ -28,6 +28,8 @@ public enum OperationType
     AES,
     BOOTSTRAP,
     UNBOOTSTRAP,
-    RESTORE_REPLICA_COUNT;
+    RESTORE_REPLICA_COUNT,
+    // FIXME: this enum is used for both streaming and sstable rebuilding
+    ADD_INDEX;
 }
 

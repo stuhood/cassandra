@@ -21,11 +21,11 @@ package org.apache.cassandra.db.secindex;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-import org.apache.commons.lang.ArrayUtils;
-
+import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.dht.AbstractBounds;
+import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
 import org.apache.cassandra.thrift.IndexType;
@@ -36,10 +36,47 @@ import org.apache.cassandra.utils.CloseableIterator;
  */
 public abstract class SecondaryIndex
 {
+    public final ColumnDefinition cdef;
+    public SecondaryIndex(ColumnDefinition cdef)
+    {
+        this.cdef = cdef;
+    }
+
+    public static SecondaryIndex open(ColumnDefinition info, ColumnFamilyStore cfs)
+    {
+        SecondaryIndex idx;
+        if (info.getIndexType() == IndexType.KEYS)
+            idx = new KeysIndex(info, cfs);
+        else
+        {
+            assert info.getIndexType() == IndexType.KEYS_BITMAP;
+            idx = new KeysBitmapIndex(info, cfs);
+        }
+        idx.initialize();
+        return idx;
+    }
+
+    public abstract String getName();
+
     /**
-     * @return The type of index.
+     * Called after construction: default impl is a noop.
      */
-    public abstract IndexType type();
+    public void initialize() {}
+
+    /**
+     * Called when this index is no longer necessary, and persisted data should be
+     * removed from disk.
+     */
+    public abstract void purge();
+
+    /**
+     * @return True if this index is ready for query access: somce indexes are built
+     * asynchronously.
+     */
+    public boolean isBuilt()
+    {
+        return true;
+    }
 
     /**
      * @return The fraction of rows matched by the given expression for this index, or
