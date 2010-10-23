@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
+import com.google.common.collect.Ordering;
 import org.apache.commons.collections.iterators.CollatingIterator;
 import org.apache.commons.lang.ArrayUtils;
 import org.slf4j.Logger;
@@ -378,30 +379,10 @@ public class FBUtilities
         }
     }
 
-    /*
-    TODO how to make this work w/ ReducingKeyIterator?
     public static <T extends Comparable<T>> CollatingIterator getCollatingIterator()
     {
         // CollatingIterator will happily NPE if you do not specify a comparator explicitly
-        return new CollatingIterator(new Comparator<T>()
-        {
-            public int compare(T o1, T o2)
-            {
-                return o1.compareTo(o2);
-            }
-        });
-    }
-     */
-    public static CollatingIterator getCollatingIterator()
-    {
-        // CollatingIterator will happily NPE if you do not specify a comparator explicitly
-        return new CollatingIterator(new Comparator()
-        {
-            public int compare(Object o1, Object o2)
-            {
-                return ((Comparable) o1).compareTo(o2);
-            }
-        });
+        return new CollatingIterator(Ordering.<T>natural());
     }
 
     public static void atomicSetMax(AtomicInteger atomic, int i)
