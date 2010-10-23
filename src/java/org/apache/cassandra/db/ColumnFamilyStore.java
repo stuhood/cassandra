@@ -324,7 +324,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         // link in indexedColumns.  this means that writes will add new data to the index immediately,
         // so we don't have to lock everything while we do the build.  it's up to the operator to wait
         // until the index is actually built before using in queries.
-        if (indexedColumns.putIfAbsent((info.name, new KeysIndex(indexedCfs, rowPartitioner)) != null)
+        if (indexedColumns.putIfAbsent(info.name, new KeysIndex(indexedCfs, rowPartitioner)) != null)
             return;
 
         // if we're just linking in the index to indexedColumns on an already-built index post-restart, we're done

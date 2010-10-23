@@ -34,6 +34,7 @@ import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.IndexHelper;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
@@ -48,6 +49,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
 
     private ColumnFamily cf;
     private Iterator<IColumn> iter;
+    private int totalColumns;
     public final SortedSet<ByteBuffer> columns;
     public final DecoratedKey key;
 
@@ -68,7 +70,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
                                                              FBUtilities.readShortByteArray(file));
             assert keyInDisk.equals(key) : String.format("%s != %s in %s", keyInDisk, key, file.getPath());
             SSTableReader.readRowSize(file, sstable.descriptor);
-            read(sstable, file);
+            read(sstable.metadata, sstable.descriptor, file);
         }
         catch (IOException e)
         {
@@ -82,13 +84,18 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
 
     public SSTableNamesIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, SortedSet<ByteBuffer> columns)
     {
+        this(sstable.metadata, sstable.descriptor, file, key, columns);
+    }
+
+    public SSTableNamesIterator(CFMetaData metadata, Descriptor desc, FileDataInput file, DecoratedKey key, SortedSet<ByteBuffer> columns)
+    {
         assert columns != null;
         this.columns = columns;
         this.key = key;
 
         try
         {
-            read(sstable, file);
+            read(metadata, desc, file);
         }
         catch (IOException ioe)
         {
@@ -96,19 +103,18 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
         }
     }
 
-    private void read(SSTableReader sstable, FileDataInput file)
+    private void read(CFMetaData metadata, Descriptor desc, FileDataInput file)
     throws IOException
     {
-
         // read the requested columns into `cf`
         /* Read the bloom filter summarizing the columns */
 
-        Filter bf = IndexHelper.defreezeBloomFilter(file, sstable.descriptor.usesOldBloomFilter);
+        Filter bf = IndexHelper.defreezeBloomFilter(file, desc.usesOldBloomFilter);
         List<IndexHelper.IndexInfo> indexList = IndexHelper.deserializeIndex(file);
 
         // we can stop early if bloom filter says none of the columns actually exist -- but,
         // we can't stop before initializing the cf above, in case there's a relevant tombstone
-        cf = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(sstable.metadata), file);
+        cf = ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(metadata), file);
 
         List<ByteBuffer> filteredColumnNames = new ArrayList<ByteBuffer>(columns.size());
         for (ByteBuffer name : columns)
@@ -124,7 +130,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
         if (indexList == null)
             readSimpleColumns(file, columns, filteredColumnNames);
         else
-            readIndexedColumns(sstable.metadata, file, columns, filteredColumnNames, indexList);
+            readIndexedColumns(metadata, file, columns, filteredColumnNames, indexList);
 
         // create an iterator view of the columns we read
         iter = cf.getSortedColumns().iterator();
@@ -132,9 +138,9 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
 
     private void readSimpleColumns(FileDataInput file, SortedSet<ByteBuffer> columnNames, List<ByteBuffer> filteredColumnNames) throws IOException
     {
-        int columns = file.readInt();
+        totalColumns = file.readInt();
         int n = 0;
-        for (int i = 0; i < columns; i++)
+        for (int i = 0; i < totalColumns; i++)
         {
             IColumn column = cf.getColumnSerializer().deserialize(file);
             if (columnNames.contains(column.name()))
@@ -149,7 +155,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
     private void readIndexedColumns(CFMetaData metadata, FileDataInput file, SortedSet<ByteBuffer> columnNames, List<ByteBuffer> filteredColumnNames, List<IndexHelper.IndexInfo> indexList)
     throws IOException
     {
-        file.readInt(); // column count
+        totalColumns = file.readInt();
 
         /* get the various column ranges we have to read */
         AbstractType comparator = metadata.comparator;
@@ -192,6 +198,11 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
     public ColumnFamily getColumnFamily()
     {
         return cf;
+    }
+
+    public int getTotalColumns()
+    {
+        return totalColumns;
     }
 
     protected IColumn computeNext()

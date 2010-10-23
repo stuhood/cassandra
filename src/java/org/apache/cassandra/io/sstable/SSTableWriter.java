@@ -29,10 +29,8 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Table;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.columniterator.SSTableNamesIterator;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.AbstractCompactedRow;
 import org.apache.cassandra.io.ColumnObserver;
@@ -47,6 +45,7 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.BloomFilter;
 import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 
 // yuck
 import org.apache.cassandra.thrift.IndexType;
@@ -58,8 +57,6 @@ public class SSTableWriter extends SSTable
     private IndexWriter iwriter;
     private SegmentedFile.Builder dbuilder;
     private final BufferedRandomAccessFile dataFile;
-    private final TreeSet<ColumnObserver> observers;
-    private final ArrayList<BitmapIndexWriter> secindexes;
     private DecoratedKey lastWrittenKey;
     private FileMark dataMark;
 
@@ -70,37 +67,10 @@ public class SSTableWriter extends SSTable
 
     public SSTableWriter(String filename, long keyCount, CFMetaData metadata, IPartitioner partitioner) throws IOException
     {
-        super(Descriptor.fromFilename(filename),
-              new HashSet<Component>(Arrays.asList(Component.DATA, Component.FILTER, Component.PRIMARY_INDEX, Component.STATS)),
-              metadata,
-              partitioner,
-              SSTable.defaultRowHistogram(),
-              SSTable.defaultColumnHistogram());
-        iwriter = new IndexWriter(descriptor, partitioner, keyCount);
+        super(Descriptor.fromFilename(filename), new HashSet<Component>(), metadata, partitioner, SSTable.defaultRowHistogram(), SSTable.defaultColumnHistogram());
+        iwriter = new IndexWriter(descriptor, metadata, partitioner, keyCount, Component.INDEX_TYPES);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
-        dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", DatabaseDescriptor.getInMemoryCompactionLimit(), true);
-
-        // the set of required components
-        components.add(Component.DATA);
-        components.add(Component.FILTER);
-        components.add(Component.PRIMARY_INDEX);
-        components.add(Component.STATS);
-
-        // open writers for each bitmap secondary index
-        Component.IdGenerator gen = new Component.IdGenerator();
-        secindexes = new ArrayList<BitmapIndexWriter>();
-        observers = new TreeSet<ColumnObserver>();
-        for (ColumnDefinition cdef : metadata.column_metadata.values())
-        {
-            if (cdef.index_type != IndexType.KEYS_BITMAP)
-                continue;
-
-            // assign a component id, and open a writer for the index
-            BitmapIndexWriter bmiw = new BitmapIndexWriter(descriptor, gen, cdef, metadata.comparator);
-            components.add(bmiw.component);
-            observers.add(bmiw.observer);
-            secindexes.add(bmiw);
-        }
+        dataFile = new BufferedRandomAccessFile(getFilename(), "rw", DatabaseDescriptor.getInMemoryCompactionLimit());
     }
     
     public void mark()
@@ -146,15 +116,13 @@ public class SSTableWriter extends SSTable
             logger.trace("wrote " + decoratedKey + " at " + dataPosition);
         iwriter.afterAppend(decoratedKey, dataPosition);
         dbuilder.addPotentialBoundary(dataPosition);
-        for (BitmapIndexWriter secindex : secindexes)
-            secindex.incrementRowId();
     }
 
     public long append(AbstractCompactedRow row) throws IOException
     {
         long currentPosition = beforeAppend(row.key);
         FBUtilities.writeShortByteArray(row.key.key, dataFile);
-        row.write(dataFile, observers);
+        row.write(dataFile, iwriter.observers);
         estimatedRowSize.add(dataFile.getFilePointer() - currentPosition);
         estimatedColumnCount.add(row.columnCount());
         afterAppend(row.key, currentPosition);
@@ -169,7 +137,7 @@ public class SSTableWriter extends SSTable
         long sizePosition = dataFile.getFilePointer();
         dataFile.writeLong(-1);
         // allow observers to observe content
-        for (ColumnObserver observer : observers)
+        for (ColumnObserver observer : iwriter.observers)
             observer.maybeObserve(cf);
         // write out row data
         int columnCount = ColumnFamily.serializer().serializeWithIndexes(cf, dataFile);
@@ -187,7 +155,7 @@ public class SSTableWriter extends SSTable
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
         // FIXME: terrible hack (but BMT is a terrible hack... they deserve eachother)
-        if (!observers.isEmpty())
+        if (!iwriter.observers.isEmpty())
             throw new RuntimeException("FIXME: Secondary indexing not supported with BMT.");
 
         long currentPosition = beforeAppend(decoratedKey);
@@ -214,22 +182,25 @@ public class SSTableWriter extends SSTable
 
         // write sstable statistics
         writeStatistics(descriptor, estimatedRowSize, estimatedColumnCount);
-        // close secondary indexes
-        for (BitmapIndexWriter secindex : this.secindexes)
-            secindex.close();
 
+        // determine the components we've written
+        HashSet<Component> wcomponents = new HashSet<Component>();
+        wcomponents.add(Component.DATA);
+        wcomponents.add(Component.STATS);
+        wcomponents.addAll(iwriter.components);
         // remove the 'tmp' marker from all components
-        final Descriptor newdesc = rename(descriptor, components);
+        final Descriptor newdesc = rename(descriptor, wcomponents);
 
         // open readers for each secondary index
         Map<ByteBuffer,BitmapIndexReader> secindexes = new TreeMap<ByteBuffer,BitmapIndexReader>(metadata.comparator);
-        for (BitmapIndexWriter secindex : this.secindexes)
+        for (BitmapIndexWriter secindex : iwriter.secindexes)
             secindexes.put(secindex.name(), BitmapIndexReader.open(newdesc, secindex.component));
 
         // finalize in-memory state for the reader
-        SegmentedFile ifile = iwriter.builder.complete(newdesc.filenameFor(SSTable.COMPONENT_INDEX));
+        SegmentedFile ifile = iwriter.getPrimaryIndexBuilder().complete(newdesc.filenameFor(SSTable.COMPONENT_INDEX));
         SegmentedFile dfile = dbuilder.complete(newdesc.filenameFor(SSTable.COMPONENT_DATA));
-        SSTableReader sstable = SSTableReader.internalOpen(newdesc, components, metadata, partitioner, ifile, dfile, iwriter.summary, iwriter.bf, maxDataAge, estimatedRowSize, estimatedColumnCount, secindexes);
+
+        SSTableReader sstable = SSTableReader.internalOpen(newdesc, wcomponents, metadata, partitioner, ifile, dfile, iwriter.getPrimaryIndexSummary(), iwriter.getBF(), maxDataAge, estimatedRowSize, estimatedColumnCount, secindexes);
         iwriter = null;
         dbuilder = null;
         return sstable;
@@ -263,7 +234,7 @@ public class SSTableWriter extends SSTable
         return dataFile.getFilePointer();
     }
     
-    public static Builder createBuilder(Descriptor desc)
+    public static Builder createBuilder(ColumnFamilyStore cfs, Descriptor desc, Set<Component.Type> ctypes)
     {
         if (!desc.isLatestVersion)
             // TODO: streaming between different versions will fail: need support for
@@ -271,24 +242,25 @@ public class SSTableWriter extends SSTable
             throw new RuntimeException(String.format("Cannot recover SSTable with version %s (current version %s).",
                                                      desc.version, Descriptor.CURRENT_VERSION));
 
-        return new Builder(desc);
+        return new Builder(cfs, desc, ctypes);
     }
 
     /**
      * Removes the given SSTable from temporary status and opens it, rebuilding the
-     * bloom filter and row index from the data file.
+     * given Component types from the data file.
      */
     public static class Builder implements ICompactionInfo
     {
+        private final ColumnFamilyStore cfs;
         private final Descriptor desc;
-        public final ColumnFamilyStore cfs;
+        private final Set<Component.Type> ctypes;
         private BufferedRandomAccessFile dfile;
 
-        public Builder(Descriptor desc)
+        public Builder(ColumnFamilyStore cfs, Descriptor desc, Set<Component.Type> ctypes)
         {
-
+            this.cfs = cfs;
             this.desc = desc;
-            cfs = Table.open(desc.ksname).getColumnFamilyStore(desc.cfname);
+            this.ctypes = ctypes;
             try
             {
                 dfile = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_DATA)), "r", 8 * 1024 * 1024, true);
@@ -299,7 +271,7 @@ public class SSTableWriter extends SSTable
             }
         }
 
-        public SSTableReader build() throws IOException
+        public Pair<Descriptor,Set<Component>> build() throws IOException
         {
             if (cfs.isInvalid())
                 return null;
@@ -316,13 +288,18 @@ public class SSTableWriter extends SSTable
             try
             {
                 estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
-                iwriter = new IndexWriter(desc, StorageService.getPartitioner(), estimatedRows);
+                iwriter = new IndexWriter(desc, cfs.metadata, StorageService.getPartitioner(), estimatedRows, ctypes);
             }
             catch(IOException e)
             {
                 dfile.close();
                 throw e;
             }
+
+            // determine the names that need observation during iteration
+            TreeSet<ByteBuffer> observed = new TreeSet<ByteBuffer>();
+            for (ColumnObserver observer : iwriter.observers)
+                observed.add(observer.name);
 
             // build the index and filter
             long rows = 0;
@@ -333,18 +310,32 @@ public class SSTableWriter extends SSTable
                 while (rowPosition < dfile.length())
                 {
                     key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, FBUtilities.readShortByteArray(dfile));
-                    iwriter.afterAppend(key, rowPosition);
-
                     long dataSize = SSTableReader.readRowSize(dfile, desc);
-                    rowPosition = dfile.getFilePointer() + dataSize; // next row
-
-                    IndexHelper.skipBloomFilter(dfile);
-                    IndexHelper.skipIndex(dfile);
-                    ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(cfs.metadata), dfile);
+                    long nextRowPosition = dfile.getFilePointer() + dataSize;
                     rowSizes.add(dataSize);
-                    columnCounts.add(dfile.readInt());
 
-                    dfile.seek(rowPosition);
+                    if (!observed.isEmpty())
+                    {
+                        // deserialize and observe interesting columns
+                        SSTableNamesIterator sstni = new SSTableNamesIterator(cfs.metadata, desc, dfile, key, observed);
+                        Iterator<IColumn> iter = ColumnObserver.Iterator.apply(sstni, iwriter.observers);
+                        // consume filtered columns
+                        while (iter.hasNext())
+                            iter.next();
+                        columnCounts.add(sstni.getTotalColumns());
+                    }
+                    else
+                    {
+                        // deserialize only enough to determine the column count
+                        IndexHelper.skipBloomFilter(dfile);
+                        IndexHelper.skipIndex(dfile);
+                        ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(cfs.metadata), dfile);
+                        columnCounts.add(dfile.readInt());
+                    }
+
+                    iwriter.afterAppend(key, rowPosition);
+                    dfile.seek(nextRowPosition);
+                    rowPosition = nextRowPosition;
                     rows++;
                 }
 
@@ -364,7 +355,7 @@ public class SSTableWriter extends SSTable
             }
 
             logger.debug("estimated row count was %s of real count", ((double)estimatedRows) / rows);
-            return SSTableReader.open(rename(desc, SSTable.componentsFor(desc)));
+            return new Pair<Descriptor, Set<Component>>(rename(desc, iwriter.components), iwriter.components);
         }
 
         public long getTotalBytes()
@@ -391,74 +382,165 @@ public class SSTableWriter extends SSTable
     }
 
     /**
-     * Encapsulates writing the index and filter for an SSTable. The state of this object is not valid until it has been closed.
+     * Encapsulates writing index-like components for an SSTable. The state of this object is not
+     * valid until it has been closed. Typically, an IndexWriter will be controlled by a Builder
+     * (during recovery) or by an SSTableWriter directly (during flush/compaction).
+     * TODO: ripe for composition
      */
     static class IndexWriter
     {
-        private final BufferedRandomAccessFile indexFile;
+        // metadata
         public final Descriptor desc;
         public final IPartitioner partitioner;
-        public final SegmentedFile.Builder builder;
-        public final IndexSummary summary;
-        public final BloomFilter bf;
-        private FileMark mark;
+        public final Set<Component.Type> types;
+        public final Set<Component> components;
 
-        IndexWriter(Descriptor desc, IPartitioner part, long keyCount) throws IOException
+        // state
+        private boolean closed = false;
+        private BufferedRandomAccessFile indexFile;
+        private SegmentedFile.Builder builder;
+        private FileMark indexMark;
+        private IndexSummary summary;
+        private BloomFilter bf;
+        private TreeSet<ColumnObserver> observers;
+        private ArrayList<BitmapIndexWriter> secindexes;
+        
+        IndexWriter(Descriptor desc, CFMetaData metadata, IPartitioner part, long keyCount, Set<Component.Type> types) throws IOException
         {
             this.desc = desc;
             this.partitioner = part;
-            indexFile = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_INDEX)), "rw", 8 * 1024 * 1024, true);
-            builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
-            summary = new IndexSummary(keyCount);
-            bf = BloomFilter.getFilter(keyCount, 15);
+            this.types = types;
+            this.components = new HashSet<Component>();
+
+            // determine and initialize the components to write
+            if (types.contains(Component.Type.PRIMARY_INDEX))
+            {
+                components.add(Component.PRIMARY_INDEX);
+                File ifile = new File(desc.filenameFor(Component.PRIMARY_INDEX));
+                assert !ifile.exists();
+                indexFile = new BufferedRandomAccessFile(ifile, "rw", 8 * 1024 * 1024, true);
+                builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
+                summary = new IndexSummary(keyCount);
+            }
+            if (types.contains(Component.Type.FILTER))
+            {
+                components.add(Component.FILTER);
+                assert !(new File(desc.filenameFor(Component.FILTER)).exists());
+                bf = BloomFilter.getFilter(keyCount, 15);
+            }
+            if (types.contains(Component.Type.BITMAP_INDEX))
+            {
+                Component.IdGenerator gen = new Component.IdGenerator();
+                secindexes = new ArrayList<BitmapIndexWriter>();
+                observers = new TreeSet<ColumnObserver>();
+                // open writers/components for each bitmap secondary index
+                for (ColumnDefinition cdef : metadata.getColumn_metadata().values())
+                {
+                    if (cdef.getIndexType() != IndexType.KEYS_BITMAP)
+                        continue;
+
+                    // assign a component id, and open a writer for the index
+                    BitmapIndexWriter bmiw = new BitmapIndexWriter(desc, gen, cdef, metadata.comparator);
+                    components.add(bmiw.component);
+                    observers.add(bmiw.observer);
+                    secindexes.add(bmiw);
+                }
+            }
+        }
+
+        public IndexSummary getPrimaryIndexSummary()
+        {
+            assert closed; return summary;
+        }
+
+        public SegmentedFile.Builder getPrimaryIndexBuilder()
+        {
+            assert closed; return builder;
+        }
+
+        public BloomFilter getBF()
+        {
+            assert closed; return bf;
         }
 
         public void afterAppend(DecoratedKey key, long dataPosition) throws IOException
         {
-            bf.add(key.key);
-            long indexPosition = indexFile.getFilePointer();
-            FBUtilities.writeShortByteArray(key.key, indexFile);
-            indexFile.writeLong(dataPosition);
-            if (logger.isTraceEnabled())
-                logger.trace("wrote index of " + key + " at " + indexPosition);
-
-            summary.maybeAddEntry(key, indexPosition);
-            builder.addPotentialBoundary(indexPosition);
+            if (types.contains(Component.Type.FILTER))
+            {
+                bf.add(key.key);
+            }
+            if (types.contains(Component.Type.PRIMARY_INDEX))
+            {
+                long indexPosition = indexFile.getFilePointer();
+                FBUtilities.writeShortByteArray(key.key, indexFile);
+                indexFile.writeLong(dataPosition);
+                summary.maybeAddEntry(key, indexPosition);
+                builder.addPotentialBoundary(indexPosition);
+                if (logger.isTraceEnabled())
+                    logger.trace("wrote index of " + key + " at " + indexPosition);
+            }
+            if (types.contains(Component.Type.BITMAP_INDEX))
+            {
+                for (BitmapIndexWriter secindex : secindexes)
+                    secindex.incrementRowId();
+            }
         }
 
         /**
-         * Closes the index and bloomfilter, making the public state of this writer valid for consumption.
+         * Close all components, making the public state of this writer valid for consumption.
          */
         public void close() throws IOException
         {
-            // bloom filter
-            FileOutputStream fos = new FileOutputStream(desc.filenameFor(SSTable.COMPONENT_FILTER));
-            DataOutputStream stream = new DataOutputStream(fos);
-            BloomFilter.serializer().serialize(bf, stream);
-            stream.flush();
-            fos.getFD().sync();
-            stream.close();
+            if (types.contains(Component.Type.FILTER))
+            {
+                FileOutputStream fos = new FileOutputStream(desc.filenameFor(SSTable.COMPONENT_FILTER));
+                DataOutputStream stream = new DataOutputStream(fos);
+                BloomFilter.serializer().serialize(bf, stream);
+                stream.flush();
+                fos.getFD().sync();
+                stream.close();
+            }
+            if (types.contains(Component.Type.PRIMARY_INDEX))
+            {
+                indexFile.getChannel().force(true);
+                long position = indexFile.getFilePointer();
+                indexFile.close();
+                // truncate any junk data from failed mark/reset
+                FileUtils.truncate(indexFile.getPath(), position);
+                summary.complete();
+            }
+            if (types.contains(Component.Type.BITMAP_INDEX))
+            {
+                for (BitmapIndexWriter secindex : secindexes)
+                    secindex.close();
+            }
 
-            // index
-            long position = indexFile.getFilePointer();
-            indexFile.close(); // calls force
-            FileUtils.truncate(indexFile.getPath(), position);
-
-            // finalize in-memory index state
-            summary.complete();
+            closed = true;
         }
 
         public void mark()
         {
-            mark = indexFile.mark();
+            if (types.contains(Component.Type.PRIMARY_INDEX))
+            {
+                indexMark = indexFile.mark();
+            }
         }
 
         public void reset() throws IOException
         {
-            // we can't un-set the bloom filter addition, but extra keys in there are harmless.
-            // we can't reset dbuilder either, but that is the last thing called in afterappend so
-            // we assume that if that worked then we won't be trying to reset.
-            indexFile.reset(mark);
+            if (types.contains(Component.Type.PRIMARY_INDEX))
+            {
+                // we can't un-set the bloom filter addition, but extra keys in there are harmless.
+                // we can't reset dbuilder either, but that is the last thing called in afterappend so
+                // we assume that if that worked then we won't be trying to reset.
+                indexFile.reset(indexMark);
+            }
+            if (types.contains(Component.Type.BITMAP_INDEX))
+            {
+                // clear the current bit
+                for (BitmapIndexWriter secindex : secindexes)
+                    secindex.reset();
+            }
         }
     }
 }
