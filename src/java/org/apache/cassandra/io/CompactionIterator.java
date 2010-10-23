@@ -86,8 +86,7 @@ implements Closeable, ICompactionInfo
     @SuppressWarnings("unchecked")
     protected static CollatingIterator getCollatingIterator(Iterable<SSTableReader> sstables) throws IOException
     {
-        // TODO CollatingIterator iter = FBUtilities.<SSTableIdentityIterator>getCollatingIterator();
-        CollatingIterator iter = FBUtilities.getCollatingIterator();
+        CollatingIterator iter = FBUtilities.<SSTableIdentityIterator>getCollatingIterator();
         for (SSTableReader sstable : sstables)
         {
             iter.addIterator(sstable.getDirectScanner(FILE_BUFFER_SIZE));

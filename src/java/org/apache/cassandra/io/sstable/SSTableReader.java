@@ -807,6 +807,9 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
 
         private void closePrimary(boolean shouldThrow) throws IOError
         {
+            if (pinput == null)
+                // no matches
+                return;
             try
             {
                 pinput.close();
