@@ -21,6 +21,7 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -39,6 +40,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.AbstractCompactedRow;
 import org.apache.cassandra.io.ColumnObserver;
 import org.apache.cassandra.io.ICompactionInfo;
+import org.apache.cassandra.io.sstable.bitidx.BitmapIndexWriter;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
@@ -56,6 +58,7 @@ public class SSTableWriter extends SSTable
     private SegmentedFile.Builder dbuilder;
     private final BufferedRandomAccessFile dataFile;
     private final TreeSet<ColumnObserver> observers;
+    private final ArrayList<BitmapIndexWriter> secindexes;
     private DecoratedKey lastWrittenKey;
     private FileMark dataMark;
 
@@ -84,6 +87,9 @@ public class SSTableWriter extends SSTable
 
         // TODO: observer per index
         observers = new TreeSet<ColumnObserver>();
+        secindexes = new ArrayList<BitmapIndexWriter>();
+        for (BitmapIndexWriter secindex : secindexes)
+            observers.add(secindex.observer());
     }
     
     public void mark()
@@ -129,6 +135,8 @@ public class SSTableWriter extends SSTable
             logger.trace("wrote " + decoratedKey + " at " + dataPosition);
         iwriter.afterAppend(decoratedKey, dataPosition);
         dbuilder.addPotentialBoundary(dataPosition);
+        for (BitmapIndexWriter secindex : secindexes)
+            secindex.incrementRowId();
     }
 
     public long append(AbstractCompactedRow row) throws IOException
@@ -188,7 +196,6 @@ public class SSTableWriter extends SSTable
     {
         // index and filter
         iwriter.close();
-
         // main data
         long position = dataFile.getFilePointer();
         dataFile.close(); // calls force
@@ -196,6 +203,9 @@ public class SSTableWriter extends SSTable
 
         // write sstable statistics
         writeStatistics(descriptor, estimatedRowSize, estimatedColumnCount);
+        // close secondary indexes: TODO: once they have state, attach it
+        for (BitmapIndexWriter secindex : secindexes)
+            secindex.close();
 
         // remove the 'tmp' marker from all components
         final Descriptor newdesc = rename(descriptor, components);
