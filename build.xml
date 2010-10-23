@@ -636,13 +636,11 @@
   </macrodef>
 
   <target name="test" depends="build-test" description="Execute unit tests">
-    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="60000">
+    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="${test.timeout}">
       <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
       <jvmarg value="-Dcorrupt-sstable-root=${test.data}/corrupt-sstables"/>
     </testmacro>
-    <testmacro suitename="driverunit" inputdir="${test.src.driver}" timeout="60000">
-      <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
-    </testmacro>
+    <testmacro suitename="driverunit" inputdir="${test.src.driver}" timeout="${test.timeout}" />
   </target>
     
   <target name="msg-ser-gen-test" depends="build-test" description="Generates message serializations">

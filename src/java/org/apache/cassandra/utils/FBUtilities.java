@@ -56,6 +56,8 @@ public class FBUtilities
 {
     private static Logger logger_ = LoggerFactory.getLogger(FBUtilities.class);
 
+    public static final byte[] EMPTY_BYTES = new byte[0];
+
     public static final BigInteger TWO = new BigInteger("2");
 
     private static volatile InetAddress localInetAddress_;
