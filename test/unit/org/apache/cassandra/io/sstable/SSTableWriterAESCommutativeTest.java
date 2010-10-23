@@ -37,6 +37,7 @@ import org.apache.cassandra.Util;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.marshal.CounterColumnType;
+import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FileUtils;
@@ -156,10 +157,13 @@ public class SSTableWriterAESCommutativeTest extends CleanupHelper
         FileUtils.deleteWithConfirm(orig.descriptor.filenameFor(Component.FILTER));
 
         // re-build inline
-        SSTableReader rebuilt = CompactionManager.instance.submitSSTableBuild(
+        ColumnFamilyStore cfs = Table.open(keyspace).getColumnFamilyStore(cfname);
+        SSTableReader rebuilt = SSTableReader.open(CompactionManager.instance.submitSSTableBuild(
+            cfs,
             orig.descriptor,
+            Component.INDEX_TYPES,
             OperationType.AES
-            ).get();
+            ).get().left);
 
         // write out cleaned CF
         SSTableReader cleaned = SSTableUtils.prepare().ks(keyspace).cf(cfname).generation(0).writeRaw(cleanedEntries);

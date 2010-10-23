@@ -49,7 +49,8 @@ public class StreamInSession
     private final Pair<InetAddress, Long> context;
     private final Runnable callback;
     private String table;
-    private final List<Future<SSTableReader>> buildFutures = new ArrayList<Future<SSTableReader>>();
+    private final List<Future<Pair<Descriptor,Set<Component>>>> buildFutures = new ArrayList<Future<Pair<Descriptor,Set<Component>>>>();
+    private ColumnFamilyStore cfs;
     private PendingFile current;
 
     private StreamInSession(Pair<InetAddress, Long> context, Runnable callback)
@@ -106,7 +107,9 @@ public class StreamInSession
         if (logger.isDebugEnabled())
             logger.debug("Finished {}. Sending ack to {}", remoteFile, this);
 
-        Future<SSTableReader> future = CompactionManager.instance.submitSSTableBuild(localFile.desc, remoteFile.type);
+        // rebuild necessary components from the data file
+        ColumnFamilyStore cfs = Table.open(localFile.desc.ksname).getColumnFamilyStore(localFile.desc.cfname);
+        Future future = CompactionManager.instance.submitSSTableBuild(cfs, localFile.desc, Component.INDEX_TYPES, remoteFile.type);
         buildFutures.add(future);
 
         files.remove(remoteFile);
@@ -130,14 +133,14 @@ public class StreamInSession
         {
             // wait for bloom filters and row indexes to finish building
             HashMap <ColumnFamilyStore, List<SSTableReader>> cfstores = new HashMap<ColumnFamilyStore, List<SSTableReader>>();
-            for (Future<SSTableReader> future : buildFutures)
+            for (Future<Pair<Descriptor,Set<Component>>> future : buildFutures)
             {
                 try
                 {
-                    SSTableReader sstable = future.get();
-                    assert sstable.getTableName().equals(table);
+                    SSTableReader sstable = SSTableReader.open(future.get().left);
                     if (sstable == null)
                         continue;
+                    assert sstable.getTableName().equals(table);
                     ColumnFamilyStore cfs = Table.open(sstable.getTableName()).getColumnFamilyStore(sstable.getColumnFamilyName());
                     cfs.addSSTable(sstable);
                     if (!cfstores.containsKey(cfs))
