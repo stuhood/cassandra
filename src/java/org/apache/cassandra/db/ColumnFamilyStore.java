@@ -181,7 +181,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                 if (idx != null)
                     idx.purge();
                 else
-                    logger.warn("index {} already removed; ignoring", FBUtilities.bytesToHex(indexName));
+                    logger.warn("index {} already removed; ignoring", ByteBufferUtil.bytesToHex(indexName));
             }
         }
 
