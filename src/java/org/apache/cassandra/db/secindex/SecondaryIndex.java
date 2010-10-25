@@ -59,9 +59,9 @@ public abstract class SecondaryIndex
     public abstract String getName();
 
     /**
-     * Called after construction: default impl is a noop.
+     * Called after construction.
      */
-    public void initialize() {}
+    public abstract void initialize();
 
     /**
      * Called when this index is no longer necessary, and persisted data should be

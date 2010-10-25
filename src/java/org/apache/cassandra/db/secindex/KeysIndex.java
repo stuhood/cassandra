@@ -25,10 +25,13 @@ import java.util.concurrent.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.io.ICompactionInfo;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.thrift.IndexExpression;
@@ -46,10 +49,10 @@ public class KeysIndex extends SecondaryIndex
 
     // the base column family store
     private final ColumnFamilyStore cfs;
-    // the index column family store // TODO: create privately
+    // the index column family store
     private final ColumnFamilyStore icfs;
 
-    public KeysIndex(ColumnDefinition cdef, ColumnFamilyStore cfs, ColumnFamilyStore icfs)
+    public KeysIndex(ColumnDefinition cdef, ColumnFamilyStore cfs)
     {
         super(cdef);
         this.cfs = cfs;
@@ -71,20 +74,31 @@ public class KeysIndex extends SecondaryIndex
     {
         if (SystemTable.isIndexBuilt(cfs.table.name, icfs.metadata.cfName))
             return;
-        // record that the column is supposed to be indexed, before we start building it
-        // (so we don't omit indexing writes that happen during build process)
-        logger.info("Creating index {}.{}", cfs.table, icfs.metadata.cfName);
-        try
+
+        // build it asynchronously; initialize gets called by CFS open and schema update, neither of which
+        // we want to block for a long period.  (actual build is serialized on CompactionManager.)
+        final SecondaryIndex sidx = this;
+        Runnable runnable = new Runnable()
         {
-            cfs.forceBlockingFlush();
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
-        cfs.rebuildSecondaryIndex(this, cfs.getSSTables());
-        logger.info("Index {} complete", icfs.metadata.cfName);
-        SystemTable.setIndexBuilt(cfs.table.name, icfs.metadata.cfName);
+            public void run()
+            {
+                // record that the column is supposed to be indexed, before we start building it
+                // (so we don't omit indexing writes that happen during build process)
+                logger.info("Creating index {}.{}", cfs.table, icfs.metadata.cfName);
+                try
+                {
+                    cfs.forceBlockingFlush();
+                }
+                catch (Exception e)
+                {
+                    throw new RuntimeException(e);
+                }
+                cfs.rebuildSecondaryIndex(sidx, cfs.getSSTables());
+                logger.info("Index {} complete", icfs.metadata.cfName);
+                SystemTable.setIndexBuilt(cfs.table.name, icfs.metadata.cfName);
+            }
+        };
+        new Thread(runnable, "create-index-" + icfs.metadata.cfName).start();
     }
 
     public void purge()
@@ -135,7 +149,7 @@ public class KeysIndex extends SecondaryIndex
         List<SecondaryIndex> kindexes = new ArrayList<SecondaryIndex>();
         for (SecondaryIndex index : indexes)
         {
-            if (index.cdef.index_type != IndexType.KEYS)
+            if (index.cdef.getIndexType() != IndexType.KEYS)
                 continue;
             names.add(index.cdef.name);
             kindexes.add(index);
@@ -159,5 +173,4 @@ public class KeysIndex extends SecondaryIndex
             throw new RuntimeException(e);
         }
     }
-
 }

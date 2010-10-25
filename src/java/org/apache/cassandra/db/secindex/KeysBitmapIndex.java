@@ -73,6 +73,25 @@ public class KeysBitmapIndex extends SecondaryIndex
         return name;
     }
 
+    public void initialize()
+    {
+        // confirm that this index has been built on all sstables
+        for (SSTableReader sstable : cfs.getSSTables())
+        {
+            if (sstable.isIndexBuilt(cdef.name))
+                continue;
+            // FIXME
+            logger.warn("Online addition of a KEYS_BITMAP index is not yet supported! Please restart this node to initialize the index.");
+            break;
+        }
+    }
+
+    public void purge()
+    {
+        // FIXME
+        logger.warn("Online removal of a KEYS_BITMAP index is not yet supported! Please restart this node to purge the index.");
+    }
+
     public double selectivity(IndexExpression expr)
     {
         if (cfs.getSSTables().isEmpty())

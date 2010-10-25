@@ -370,6 +370,12 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
         dfile = dbuilder.complete(descriptor.filenameFor(Component.DATA));
     }
 
+    /** @return True if the given KEYS_BITMAP index is built on this sstbale. */
+    public boolean isIndexBuilt(ByteBuffer name)
+    {
+        return secindexes.containsKey(name);
+    }
+
     /**
      * For testing purposes only.
      */
