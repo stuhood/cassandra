@@ -20,6 +20,8 @@ package org.apache.cassandra.dht;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.db.marshal.BytesType;
+
 public class ByteOrderedPartitioner extends AbstractByteOrderedPartitioner
 {
     public BytesToken getToken(ByteBuffer key)
@@ -27,5 +29,10 @@ public class ByteOrderedPartitioner extends AbstractByteOrderedPartitioner
         if (key.remaining() == 0)
             return MINIMUM;
         return new BytesToken(key);
+    }
+
+    public BytesType equivalentType()
+    {
+        return BytesType.instance;
     }
 }

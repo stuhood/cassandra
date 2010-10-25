@@ -81,4 +81,9 @@ public class LocalPartitioner implements IPartitioner<LocalToken>
     {
         return Collections.singletonMap((Token)getMinimumToken(), new Float(1.0));
     }
+
+    public AbstractType equivalentType()
+    {
+        return comparator;
+    }
 }

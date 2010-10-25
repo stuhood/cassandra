@@ -27,11 +27,14 @@ import java.util.Map;
 
 import com.google.common.base.Charsets;
 
+import org.apache.cassandra.db.marshal.LocalByPartionerType;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class CollatingOrderPreservingPartitioner extends AbstractByteOrderedPartitioner
 {
     static final Collator collator = Collator.getInstance(new Locale("en", "US"));
+
+    private final LocalByPartionerType equivalent = new LocalByPartionerType(this);
 
     public BytesToken getToken(ByteBuffer key)
     {
@@ -51,4 +54,9 @@ public class CollatingOrderPreservingPartitioner extends AbstractByteOrderedPart
     }
 
     public Map<Token, Float> describeOwnership(List<Token> sortedTokens){ throw new UnsupportedOperationException(); }
+
+    public LocalByPartionerType equivalentType()
+    {
+        return equivalent;
+    }
 }

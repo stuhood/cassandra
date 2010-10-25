@@ -25,6 +25,7 @@ import java.nio.charset.CharacterCodingException;
 import java.util.*;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.marshal.LocalByPartionerType;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.GuidGenerator;
@@ -41,6 +42,8 @@ public class RandomPartitioner implements IPartitioner<BigIntegerToken>
     public static final BigIntegerToken MINIMUM = new BigIntegerToken("-1");
 
     private static final byte DELIMITER_BYTE = ":".getBytes()[0];
+
+    private final LocalByPartionerType equivalent = new LocalByPartionerType(this);
 
     public DecoratedKey<BigIntegerToken> decorateKey(ByteBuffer key)
     {
@@ -167,5 +170,10 @@ public class RandomPartitioner implements IPartitioner<BigIntegerToken>
             ownerships.put(start, x);
         }
         return ownerships;
+    }
+
+    public LocalByPartionerType equivalentType()
+    {
+        return equivalent;
     }
 }
