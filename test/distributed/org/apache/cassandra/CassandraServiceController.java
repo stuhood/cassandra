@@ -184,6 +184,22 @@ public class CassandraServiceController
         }
     }
 
+    /**
+     * Execute nodetool with args against localhost from the given host.
+     */
+    public void nodetool(String args, InetAddress host)
+    {
+        callOnHost(host, String.format("apache/cassandra/nodetool %s", args));
+    }
+
+    /**
+     * Wipes all persisted state for the given node, leaving it as if it had just started.
+     */
+    public void wipeHost(InetAddress host)
+    {
+        callOnHost(host, "apache/cassandra/wipe-state");
+    }
+
     public Failure failHosts(InetAddress... hosts)
     {
         return new Failure(hosts).trigger();
