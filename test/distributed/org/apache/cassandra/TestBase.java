@@ -47,9 +47,14 @@ public abstract class TestBase
 
     protected static void addKeyspace() throws Exception
     {
+        addKeyspace(KEYSPACE, 3);
+    }
+
+    protected static void addKeyspace(String name, int rf) throws Exception
+    {
         List<CfDef> cfDefList = new LinkedList<CfDef>();
 
-        CfDef standard1 = new CfDef(KEYSPACE, "Standard1");
+        CfDef standard1 = new CfDef(name, "Standard1");
         standard1.setComparator_type("BytesType");
         standard1.setKey_cache_size(10000);
         standard1.setRow_cache_size(1000);
@@ -65,9 +70,9 @@ public abstract class TestBase
 
         client.system_add_keyspace(
             new KsDef(
-                KEYSPACE,
+                name,
                 "org.apache.cassandra.locator.SimpleStrategy",
-                3,
+                rf,
                 cfDefList));
 
         // poll, until KS added
@@ -82,7 +87,7 @@ public abstract class TestBase
                     List<KsDef> ksDefList = client.describe_keyspaces();
                     for (KsDef ks : ksDefList)
                     {
-                        if (ks.name.equals(KEYSPACE))
+                        if (ks.name.equals(name))
                             break poll;
                     }
 
