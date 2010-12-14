@@ -1,0 +1,52 @@
+Distributed Test Harness
+
+
+Sub-project description
+-----------------------
+
+A distributed test harness that deploys a cluster to a cloud provider,
+via Apache Whirr, runs tests against that cluster, then tears down
+the deployed cluster.
+
+Requirements
+------------
+  * A cloud provider account. [see: http://incubator.apache.org/whirr/]
+
+
+Getting started
+---------------
+
+First, setup an account w/ a supported cloud provider.  Then, refer to
+the Whirr documentation for configuration instructions.  Refer to:
+    * http://incubator.apache.org/whirr/quick-start-guide.html
+
+Setup your personal whirr configuration properties.  The shared whirr
+configuration is located at:
+    * test/resources/whirr-default.properties
+
+An example EC2 whirr configuration would be:
+whirr.provider=ec2
+whirr.location-id=us-east-1
+whirr.image-id=us-east-1/ami-2272864b
+whirr.hardware-id=m1.xlarge
+whirr.identity=[EC2 Access Key ID]
+whirr.credential=[EC2 Secret Access Key]
+whirr.private-key-file=${sys:user.home}/.ssh/id_rsa
+whirr.public-key-file=${sys:user.home}/.ssh/id_rsa.pub
+whirr.client-cidrs=0.0.0.0/0
+whirr.run-url-base=http://hoodidge.net/scripts/
+
+The distributed tests are located in:
+    * test/distributed
+
+Run the tests via ant:
+    * ant distributed-test -Dwhirr.config=my-whirr.properties
+
+The ant target will:
+    * download extra dependencies via Apache Ivy
+    * compile the distributed tests
+    * deploy a cluster via Apache Whirr
+    * run the distributed tests against the cluster
+    * tear down the deployed cluster
+
+
