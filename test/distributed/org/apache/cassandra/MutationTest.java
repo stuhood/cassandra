@@ -164,25 +164,4 @@ public class MutationTest extends TestBase
             failure.resolve();
         }
     }
-
-    @Test
-    public void testHarnessExamples() throws Exception
-    {
-        InetAddress host = controller.getHosts().get(0);
-
-        // knock a node offline
-        Failure failure = controller.failHosts(host);
-        try
-        {
-            // while it is offline, wipe its directories
-            controller.wipeHost(host);
-        }
-        finally
-        {
-            // bring it back online
-            failure.resolve();
-        }
-        // check that it is actually responding
-        controller.nodetool("ring", host);
-    }
 }

@@ -340,7 +340,7 @@
     </target>
 
     <!-- creates a release tarball -->
-    <target name="release" depends="jar,javadoc,rat-init" description="Create a full Cassandra binary distribution including tar.gz">
+    <target name="release" depends="clean,jar,javadoc,rat-init" description="Create a full Cassandra binary distribution including tar.gz">
       <mkdir dir="${dist.dir}"/>
       <copy todir="${dist.dir}/lib">
         <fileset dir="${build.lib}"/>
