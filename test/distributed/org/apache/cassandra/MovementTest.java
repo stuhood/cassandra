@@ -42,18 +42,13 @@ import static junit.framework.Assert.assertNull;
 
 public class MovementTest extends TestBase
 {
-    @Test
-    public void testLoadbalance() throws Exception
-    {
-        final String keyspace = "TestLoadbalance";
-        final int N = 1000;
-        addKeyspace(keyspace, 1);
-        List<InetAddress> hosts = controller.getHosts();
-        Cassandra.Client client = controller.createClient(hosts.get(0));
-        client.set_keyspace(keyspace);
+    private static final String STANDARD_CF = "Standard1";
+    private static final ColumnParent STANDARD = new ColumnParent(STANDARD_CF);
 
-        ColumnParent     cp = new ColumnParent("Standard1");
-        ConsistencyLevel cl = ConsistencyLevel.ONE;
+    /** Inserts 1000 keys with names such that at least 1 key ends up on each host. */
+    private static Map<ByteBuffer,List<ColumnOrSuperColumn>> insertBatch(Cassandra.Client client) throws Exception
+    {
+        final int N = 1000;
         Column col1 = new Column(
             ByteBuffer.wrap("c1".getBytes()),
             ByteBuffer.wrap("v1".getBytes()),
@@ -65,35 +60,32 @@ public class MovementTest extends TestBase
             0
             );
 
-        // add N keys
-        Set<ByteBuffer> keys = new HashSet<ByteBuffer>();
+        // build N rows
+        Map<ByteBuffer,List<ColumnOrSuperColumn>> rows = new HashMap<ByteBuffer, List<ColumnOrSuperColumn>>();
+        Map<ByteBuffer,Map<String,List<Mutation>>> batch = new HashMap<ByteBuffer,Map<String,List<Mutation>>>();
         for (int i = 0; i < N; i++)
         {
             String rawKey = String.format("test.key.%d", i);
             ByteBuffer key = ByteBuffer.wrap(rawKey.getBytes());
-            client.insert(key, cp, col1, cl);
-            client.insert(key, cp, col2, cl);
-            keys.add(key);
+            Mutation m1 = (new Mutation()).setColumn_or_supercolumn((new ColumnOrSuperColumn()).setColumn(col1));
+            Mutation m2 = (new Mutation()).setColumn_or_supercolumn((new ColumnOrSuperColumn()).setColumn(col2));
+            rows.put(key, Arrays.asList(m1.getColumn_or_supercolumn(),
+                                        m2.getColumn_or_supercolumn()));
+
+            // add row to batch
+            Map<String,List<Mutation>> rowmap = new HashMap<String,List<Mutation>>();
+            rowmap.put(STANDARD_CF, Arrays.asList(m1, m2));
+            batch.put(key, rowmap);
         }
-        Thread.sleep(100);
+        // insert the batch
+        client.batch_mutate(batch, ConsistencyLevel.ONE);
+        return rows;
+    }
 
-        // ask a node to move to a new location
-        controller.nodetool("loadbalance", hosts.get(0));
-        // trigger cleanup on all nodes
-        for (InetAddress host : hosts)
-            controller.nodetool("cleanup", host);
-
-        // check that all keys still exist
-        for (ByteBuffer key : keys)
+    private static void verifyBatch(Cassandra.Client client, Map<ByteBuffer,List<ColumnOrSuperColumn>> batch) throws Exception
+    {
+        for (Map.Entry<ByteBuffer,List<ColumnOrSuperColumn>> entry : batch.entrySet())
         {
-            // verify get
-            ColumnPath cpath = new ColumnPath("Standard1");
-            cpath.setColumn(col1.getName());
-            assertEquals(
-                client.get(key, cpath, cl).column,
-                col1
-                );
-
             // verify slice
             SlicePredicate sp = new SlicePredicate();
             sp.setSlice_range(
@@ -104,13 +96,68 @@ public class MovementTest extends TestBase
                     1000
                     )
                 );
-            List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
-            coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
-            coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
-            assertEquals(
-                client.get_slice(key, cp, sp, cl),
-                coscs
-                );
+            assertEquals(client.get_slice(entry.getKey(), STANDARD, sp, ConsistencyLevel.ONE),
+                         entry.getValue());
         }
+    }
+
+    @Test
+    public void testLoadbalance() throws Exception
+    {
+        final String keyspace = "TestLoadbalance";
+        addKeyspace(keyspace, 1);
+        List<InetAddress> hosts = controller.getHosts();
+        Cassandra.Client client = controller.createClient(hosts.get(0));
+        client.set_keyspace(keyspace);
+
+        // add keys to each node
+        Map<ByteBuffer,List<ColumnOrSuperColumn>> rows = insertBatch(client);
+
+        Thread.sleep(100);
+
+        // ask a node to move to a new location
+        controller.nodetool("loadbalance", hosts.get(0));
+
+        // trigger cleanup on all nodes
+        for (InetAddress host : hosts)
+            controller.nodetool("cleanup", host);
+
+        // check that all keys still exist
+        verifyBatch(client, rows);
+    }
+
+    @Test
+    public void testDecomissionAndAdd() throws Exception
+    {
+        List<InetAddress> hosts = controller.getHosts();
+
+        // decommission one node
+        InetAddress failHost = hosts.get(hosts.size()-1);
+        controller.nodetool("decommission", failHost);
+
+        Map<ByteBuffer,List<ColumnOrSuperColumn>> rows;
+        Cassandra.Client client = controller.createClient(hosts.get(0));
+        Failure failure = controller.failHosts(failHost);
+        try
+        {
+            // wipe the failed node
+            controller.wipeHost(failHost);
+
+            // insert columns to live nodes
+            client.set_keyspace(KEYSPACE);
+            rows = insertBatch(client);
+
+            Thread.sleep(100);
+        }
+        finally
+        {
+            // recommission the (decommissioned) node
+            failure.resolve();
+        }
+
+        Thread.sleep(1000 * 30);
+
+        // check that all keys still exist
+        verifyBatch(client, rows);
     }
 }
