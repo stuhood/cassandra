@@ -141,7 +141,7 @@ public class MovementTest extends TestBase
         try
         {
             // wipe the failed node
-            controller.wipeHost(failHost);
+            controller.wipeHosts(failHost);
 
             // insert columns to live nodes
             client.set_keyspace(KEYSPACE);

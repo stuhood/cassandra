@@ -187,17 +187,17 @@ public class CassandraServiceController
     /**
      * Execute nodetool with args against localhost from the given host.
      */
-    public void nodetool(String args, InetAddress host)
+    public void nodetool(String args, InetAddress... hosts)
     {
-        callOnHost(host, String.format("apache/cassandra/nodetool %s", args));
+        callOnHosts(String.format("apache/cassandra/nodetool %s", args), hosts);
     }
 
     /**
      * Wipes all persisted state for the given node, leaving it as if it had just started.
      */
-    public void wipeHost(InetAddress host)
+    public void wipeHosts(InetAddress... hosts)
     {
-        callOnHost(host, "apache/cassandra/wipe-state");
+        callOnHosts("apache/cassandra/wipe-state", hosts);
     }
 
     public Failure failHosts(InetAddress... hosts)
@@ -206,9 +206,11 @@ public class CassandraServiceController
     }
 
     /** TODO: Move to CassandraService? */
-    protected void callOnHost(InetAddress host, String payload)
+    protected void callOnHosts(String payload, InetAddress... hosts)
     {
-        final String hoststring = host.getHostAddress();
+        final Set<String> hostset = new HashSet<String>();
+        for (InetAddress host : hosts)
+            hostset.add(host.getHostAddress());
         Map<? extends NodeMetadata,ExecResponse> results;
         try
         {
@@ -216,7 +218,9 @@ public class CassandraServiceController
             {
                 public boolean apply(NodeMetadata node)
                 {
-                    return node.getPublicAddresses().contains(hoststring);
+                    Set<String> intersection = new HashSet<String>(hostset);
+                    intersection.retainAll(node.getPublicAddresses());
+                    return !intersection.isEmpty();
                 }
             }, newStringPayload(runUrls(clusterSpec.getRunUrlBase(), payload)),
             RunScriptOptions.Builder.overrideCredentialsWith(credentials));
@@ -225,11 +229,11 @@ public class CassandraServiceController
         {
             throw new RuntimeException(e);
         }
-        if (results.size() != 1)
-            throw new RuntimeException(results.size() + " hosts matched " + host + ": " + results);
-        ExecResponse response = results.values().iterator().next();
-        if (response.getExitCode() != 0)
-            throw new RuntimeException("Call " + payload + " on " + host + " failed: " + response);
+        if (results.size() != hostset.size())
+            throw new RuntimeException(results.size() + " hosts matched " + hostset + ": " + results);
+        for (ExecResponse response : results.values())
+            if (response.getExitCode() != 0)
+                throw new RuntimeException("Call " + payload + " failed on at least one of " + hostset + ": " + results.values());
     }
 
     public List<InetAddress> getHosts()
@@ -251,15 +255,13 @@ public class CassandraServiceController
         
         public Failure trigger()
         {
-            for (InetAddress host : hosts)
-                callOnHost(host, "apache/cassandra/stop");
+            callOnHosts("apache/cassandra/stop", hosts);
             return this;
         }
 
         public void resolve()
         {
-            for (InetAddress host : hosts)
-                callOnHost(host, "apache/cassandra/start");
+            callOnHosts("apache/cassandra/start", hosts);
             for (InetAddress host : hosts)
                 waitForNodeInitialization(host);
         }
