@@ -54,6 +54,7 @@
     <property name="version" value="${base.version}-SNAPSHOT"/>
     <property name="version.properties.dir" value="${build.classes}/org/apache/cassandra/config/"/>
     <property name="final.name" value="${ant.project.name}-${version}"/>
+    <property name="release.tar.root" value="${build.dir}/${final.name}"/>
     <property name="ivy.version" value="2.1.0" />
     <property name="ivy.url"
               value="http://repo2.maven.org/maven2/org/apache/ivy/ivy" />
@@ -365,8 +366,8 @@
         </fileset>
       </copy>
 
-      <tar compression="gzip" longfile="gnu"
-        destfile="${build.dir}/${final.name}-bin.tar.gz">
+      <tar compression="none" longfile="gnu"
+        destfile="${release.tar.root}-bin.tar">
 
         <!-- Everything but bin/ (default mode) -->
         <tarfileset dir="${dist.dir}" prefix="${final.name}">
@@ -388,14 +389,12 @@
       <rat:report xmlns:rat="antlib:org.apache.rat.anttasks"
                   reportFile="${build.dir}/${final.name}-bin.rat.txt">
         <tarfileset>
-          <gzipresource>
-            <file file="${build.dir}/${final.name}-bin.tar.gz" />
-          </gzipresource>
+          <file file="${release.tar.root}-bin.tar" />
         </tarfileset>
       </rat:report>
 
-      <tar compression="gzip" longfile="gnu"
-           destfile="${build.dir}/${final.name}-src.tar.gz">
+      <tar compression="none" longfile="gnu"
+           destfile="${release.tar.root}-src.tar">
 
         <tarfileset dir="${basedir}"
                     prefix="${final.name}-src">
@@ -419,15 +418,14 @@
           <exclude name="bin/*.bat" />
         </tarfileset>
       </tar>
-
       <rat:report xmlns:rat="antlib:org.apache.rat.anttasks"
                   reportFile="${build.dir}/${final.name}-src.rat.txt">
         <tarfileset>
-          <gzipresource>
-            <file file="${build.dir}/${final.name}-src.tar.gz" />
-          </gzipresource>
+          <file file="${release.tar.root}-src.tar" />
         </tarfileset>
       </rat:report>
+      <gzip src="${release.tar.root}-bin.tar" destfile="${release.tar.root}-bin.tar.gz"/>
+      <gzip src="${release.tar.root}-src.tar" destfile="${release.tar.root}-src.tar.gz"/>
     </target>
 
   <target name="build-test" depends="build" description="Compile test classes">
