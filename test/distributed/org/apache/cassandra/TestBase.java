@@ -161,14 +161,7 @@ public abstract class TestBase
     @AfterClass
     public static void tearDown() throws Exception
     {
-        try
-        {
-            dropKeyspace();
-        }
-        finally
-        {
-            controller.shutdown();
-        }
+        dropKeyspace();
     }
 
     protected static String createTemporaryKey()

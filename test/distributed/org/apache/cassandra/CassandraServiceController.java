@@ -159,15 +159,42 @@ public class CassandraServiceController
         credentials = new Credentials(nm.getCredentials().identity, clusterSpec.readPrivateKey());
 
         waitForClusterInitialization();
+
+        ShutdownHook shutdownHook = new ShutdownHook(this);
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+
         running = true;
     }
 
-    public synchronized void shutdown() throws IOException, InterruptedException
+    public synchronized void shutdown()
     {
-        LOG.info("Shutting down cluster...");
-        if (service != null)
-            service.destroyCluster(clusterSpec);
-        running = false;
+        // catch and log errors, we're in a runtime shutdown hook
+        try
+        {
+            LOG.info("Shutting down cluster...");
+            if (service != null)
+                service.destroyCluster(clusterSpec);
+            running = false;
+        }
+        catch (Exception e)
+        {
+            LOG.error(String.format("Error shutting down cluster: %s", e));
+        }
+    }
+
+    public class ShutdownHook extends Thread
+    {
+        private CassandraServiceController controller;
+
+        public ShutdownHook(CassandraServiceController controller)
+        {
+            this.controller = controller;
+        }
+
+        public void run()
+        {
+            controller.shutdown();
+        }
     }
 
     public synchronized boolean ensureClusterRunning() throws Exception
