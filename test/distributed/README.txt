@@ -33,8 +33,9 @@ whirr.identity=[EC2 Access Key ID]
 whirr.credential=[EC2 Secret Access Key]
 whirr.private-key-file=${sys:user.home}/.ssh/id_rsa
 whirr.public-key-file=${sys:user.home}/.ssh/id_rsa.pub
-whirr.client-cidrs=0.0.0.0/0
 whirr.run-url-base=http://hoodidge.net/scripts/
+whirr.blobstore.provider=s3
+whirr.blobstore.container=cassandratests
 
 The distributed tests are located in:
     * test/distributed
@@ -45,6 +46,7 @@ Run the tests via ant:
 The ant target will:
     * download extra dependencies via Apache Ivy
     * compile the distributed tests
+    * push the local working copy to a blobstore to fetch from the test nodes
     * deploy a cluster via Apache Whirr
     * run the distributed tests against the cluster
     * tear down the deployed cluster

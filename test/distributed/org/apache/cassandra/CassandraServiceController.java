@@ -20,12 +20,16 @@ package org.apache.cassandra;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.URI;
 import java.util.*;
 
 import org.apache.cassandra.thrift.Cassandra;
 import org.apache.cassandra.thrift.TokenRange;
 import org.apache.cassandra.utils.KeyPair;
+import org.apache.cassandra.utils.BlobUtils;
+import org.apache.cassandra.utils.Pair;
 
+import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.CompositeConfiguration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 
@@ -41,6 +45,8 @@ import static org.apache.whirr.service.RunUrlBuilder.runUrls;
 import org.apache.whirr.service.Service;
 import org.apache.whirr.service.ServiceFactory;
 import org.apache.whirr.service.cassandra.CassandraService;
+
+import org.jclouds.blobstore.domain.BlobMetadata;
 
 import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.domain.NodeMetadata;
@@ -138,7 +144,7 @@ public class CassandraServiceController
     {
         LOG.info("Starting up cluster...");
 
-        CompositeConfiguration config = new CompositeConfiguration();
+        config = new CompositeConfiguration();
         config.addConfiguration(new PropertiesConfiguration("whirr-default.properties"));
         if (System.getProperty("whirr.config") != null)
         {
@@ -152,6 +158,16 @@ public class CassandraServiceController
             Map<String, String> pair = KeyPair.generate();
             clusterSpec.setPublicKey(pair.get("public"));
             clusterSpec.setPrivateKey(pair.get("private"));
+        }
+
+        // if a local tarball is available deploy it to the blobstore where it will be available to cassandra
+        if (System.getProperty("whirr.cassandra_tarball") != null)
+        {
+            Pair<BlobMetadata,URI> blob = BlobUtils.storeBlob(config, clusterSpec, System.getProperty("whirr.cassandra_tarball"));
+            tarball = blob.left;
+            config.setProperty(CassandraClusterActionHandler.BIN_TARBALL, blob.right.toURL().toString());
+            // TODO: parse the CassandraVersion property file instead
+            config.setProperty(CassandraClusterActionHandler.MAJOR_VERSION, "0.7");
         }
 
         service = (CassandraService)new ServiceFactory().create(clusterSpec.getServiceName());
@@ -180,6 +196,8 @@ public class CassandraServiceController
             LOG.info("Shutting down cluster...");
             if (service != null)
                 service.destroyCluster(clusterSpec);
+            if (tarball != null)
+                BlobUtils.deleteBlob(config, clusterSpec, tarball);
             running = false;
         }
         catch (Exception e)
