@@ -19,7 +19,7 @@
 <ivy-module version="2.0">
   <info organisation="apache-cassandra" module="cassandra-distributed-test"/>
   <dependencies>
-    <dependency org="org.apache.whirr" name="whirr-core" rev="0.2.0-incubating"/>
-    <dependency org="org.apache.whirr" name="whirr-cli" rev="0.2.0-incubating"/>
+    <dependency org="org.apache.whirr" name="whirr-core" rev="0.3.0-incubating-SNAPSHOT"/>
+    <dependency org="org.apache.whirr" name="whirr-cli" rev="0.3.0-incubating-SNAPSHOT"/>
   </dependencies>
 </ivy-module>

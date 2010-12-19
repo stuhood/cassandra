@@ -41,10 +41,11 @@ import org.apache.whirr.service.Cluster;
 import org.apache.whirr.service.Cluster.Instance;
 import org.apache.whirr.service.ClusterSpec;
 import org.apache.whirr.service.ComputeServiceContextBuilder;
-import static org.apache.whirr.service.RunUrlBuilder.runUrls;
 import org.apache.whirr.service.Service;
 import org.apache.whirr.service.ServiceFactory;
 import org.apache.whirr.service.cassandra.CassandraService;
+import org.apache.whirr.service.cassandra.CassandraClusterActionHandler;
+import org.apache.whirr.service.jclouds.RunUrlStatement;
 
 import org.jclouds.blobstore.domain.BlobMetadata;
 
@@ -53,6 +54,7 @@ import org.jclouds.compute.domain.NodeMetadata;
 import org.jclouds.compute.options.RunScriptOptions;
 import org.jclouds.domain.Credentials;
 import org.jclouds.io.Payload;
+import org.jclouds.scriptbuilder.domain.OsFamily;
 import org.jclouds.ssh.ExecResponse;
 import static org.jclouds.io.Payloads.newStringPayload;
 
@@ -273,7 +275,7 @@ public class CassandraServiceController
                     intersection.retainAll(node.getPublicAddresses());
                     return !intersection.isEmpty();
                 }
-            }, newStringPayload(runUrls(clusterSpec.getRunUrlBase(), payload)),
+            }, newStringPayload(new RunUrlStatement(clusterSpec.getRunUrlBase(), payload).render(OsFamily.UNIX)),
             RunScriptOptions.Builder.overrideCredentialsWith(credentials));
         }
         catch (Exception e)
