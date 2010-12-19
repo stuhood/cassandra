@@ -80,6 +80,9 @@ public class CassandraServiceController
     private Cluster             cluster;
     private ComputeService      computeService;
     private Credentials         credentials;
+    private CompositeConfiguration config;
+    private BlobMetadata        tarball;
+    private List<InetAddress>   hosts;
     
     private CassandraServiceController()
     {
@@ -102,8 +105,8 @@ public class CassandraServiceController
 
     private void waitForClusterInitialization()
     {
-        for (Instance instance : cluster.getInstances())
-            waitForNodeInitialization(instance.getPublicAddress());
+        for (InetAddress host : hosts)
+            waitForNodeInitialization(host);
     }
     
     private void waitForNodeInitialization(InetAddress addr)
@@ -154,9 +157,12 @@ public class CassandraServiceController
         service = (CassandraService)new ServiceFactory().create(clusterSpec.getServiceName());
         cluster = service.launchCluster(clusterSpec);
         computeService = ComputeServiceContextBuilder.build(clusterSpec).getComputeService();
-        // TODO: expose creds on CassandraService without this mumbo-jumbo
-        NodeMetadata nm = computeService.getNodeMetadata(computeService.listNodes().iterator().next().getId());
-        credentials = new Credentials(nm.getCredentials().identity, clusterSpec.readPrivateKey());
+        hosts = new ArrayList<InetAddress>();
+        for (Instance instance : cluster.getInstances())
+        {
+            hosts.add(instance.getPublicAddress());
+            credentials = instance.getLoginCredentials();
+        }
 
         waitForClusterInitialization();
 
@@ -265,10 +271,6 @@ public class CassandraServiceController
 
     public List<InetAddress> getHosts()
     {
-        Set<Instance> instances = cluster.getInstances();
-        List<InetAddress> hosts = new ArrayList<InetAddress>(instances.size());
-        for (Instance instance : instances)
-            hosts.add(instance.getPublicAddress());
         return hosts;
     }
 

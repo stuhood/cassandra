@@ -129,6 +129,8 @@ public class MovementTest extends TestBase
     @Test
     public void testDecomissionAndAdd() throws Exception
     {
+        final String keyspace = "TestDecomissionAndAdd";
+        addKeyspace(keyspace, 1);
         List<InetAddress> hosts = controller.getHosts();
 
         // decommission one node
@@ -144,7 +146,7 @@ public class MovementTest extends TestBase
             controller.wipeHosts(failHost);
 
             // insert columns to live nodes
-            client.set_keyspace(KEYSPACE);
+            client.set_keyspace(keyspace);
             rows = insertBatch(client);
 
             Thread.sleep(100);
@@ -155,7 +157,7 @@ public class MovementTest extends TestBase
             failure.resolve();
         }
 
-        Thread.sleep(1000 * 30);
+        Thread.sleep(1000 * 3);
 
         // check that all keys still exist
         verifyBatch(client, rows);
