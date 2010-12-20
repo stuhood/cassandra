@@ -271,6 +271,11 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
         columns.remove(columnName);
     }
 
+    public void markForDeleteAt(int localtime, long timestamp)
+    {
+        delete(localtime, timestamp);
+    }
+
     @Deprecated // TODO this is a hack to set initial value outside constructor
     public void delete(int localtime, long timestamp)
     {

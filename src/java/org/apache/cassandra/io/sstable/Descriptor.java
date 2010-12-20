@@ -48,11 +48,12 @@ public class Descriptor
     public final boolean temporary;
     private final int hashCode;
 
+    public final boolean isLatestVersion;
     public final boolean hasStringsInBloomFilter;
     public final boolean hasIntRowSize;
     public final boolean hasEncodedKeys;
-    public final boolean isLatestVersion;
     public final boolean usesOldBloomFilter;
+    public final boolean isRowIndexed;
 
     /**
      * A descriptor that assumes CURRENT_VERSION.
@@ -73,11 +74,12 @@ public class Descriptor
         temporary = temp;
         hashCode = Objects.hashCode(directory, generation, ksname, cfname);
 
+        isLatestVersion = version.compareTo(CURRENT_VERSION) == 0;
         hasStringsInBloomFilter = version.compareTo("c") < 0;
         hasIntRowSize = version.compareTo("d") < 0;
         hasEncodedKeys = version.compareTo("e") < 0;
         usesOldBloomFilter = version.compareTo("f") < 0;
-        isLatestVersion = version.compareTo(CURRENT_VERSION) == 0;
+        isRowIndexed = version.compareTo("g") < 0;
     }
 
     public boolean hasReplayPosition()

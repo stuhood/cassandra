@@ -34,16 +34,19 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.avro.file.CodecFactory;
+import org.apache.avro.file.DataFileWriter;
+import org.apache.avro.specific.SpecificDatumWriter;
+
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Table;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SegmentedFile;
+import org.apache.cassandra.io.sstable.avro.*;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -53,9 +56,11 @@ public class SSTableWriter extends SSTable implements Closeable
 
     private IndexWriter iwriter;
     private SegmentedFile.Builder dbuilder;
-    private final BufferedRandomAccessFile dataFile;
+    private DataFileWriter<Chunk> dataFile;
+    private ChunkAppender appender;
     private DecoratedKey lastWrittenKey;
-    private FileMark dataMark;
+
+    private long mark = -1;
 
     public SSTableWriter(String filename, long keyCount) throws IOException
     {
@@ -71,26 +76,36 @@ public class SSTableWriter extends SSTable implements Closeable
               partitioner);
         iwriter = new IndexWriter(descriptor, partitioner, replayPosition, keyCount);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
-        dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE, true);
+        dataFile = new DataFileWriter<Chunk>(new SpecificDatumWriter<Chunk>());
+        dataFile.create(Chunk.SCHEMA$, new File(getFilename()));
+        createAppender();
     }
-    
-    public void mark()
+
+    private void createAppender()
     {
-        dataMark = dataFile.mark();
+        appender = new ChunkAppender(dataFile,
+                                     metadata.cfType == ColumnFamilyType.Standard ? 3 : 4);
+    }
+
+    public void mark() throws IOException
+    {
+        assert appender.isFlushed() : "Cannot mark mid-row: call reset first";
+        mark = dataFile.sync();
         iwriter.mark();
     }
 
-    public void reset()
+    /** NB: This reopens the file at the mark, and should not be used lightly. */
+    public void reset() throws IOException
     {
-        try
-        {
-            dataFile.reset(dataMark);
-            iwriter.reset();
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
+        assert mark != -1 : "Cannot reset without marking";
+        // truncate and reopen
+        dataFile.close();
+        FileUtils.truncate(getFilename(), mark);
+        dataFile = new DataFileWriter(new SpecificDatumWriter<Chunk>());
+        dataFile = dataFile.appendTo(new File(getFilename()));
+        // recreate the appender
+        createAppender();
+        iwriter.reset();
     }
 
     private long beforeAppend(DecoratedKey decoratedKey) throws IOException
@@ -106,7 +121,7 @@ public class SSTableWriter extends SSTable implements Closeable
             logger.info("Writing into file " + getFilename());
             throw new IOException("Keys must be written in ascending order.");
         }
-        return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
+        return dataFile.sync();
     }
 
     private void afterAppend(DecoratedKey decoratedKey, long dataPosition, long dataSize, long columnCount) throws IOException
@@ -121,43 +136,28 @@ public class SSTableWriter extends SSTable implements Closeable
 
     public long append(AbstractCompactedRow row) throws IOException
     {
+        throw new RuntimeException("FIXME: not implemented"); /*
         long currentPosition = beforeAppend(row.key);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
         row.write(dataFile);
         afterAppend(row.key, currentPosition, dataFile.getFilePointer() - currentPosition, row.columnCount());
         return currentPosition;
+        */
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
     {
         long startPosition = beforeAppend(decoratedKey);
-        ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
-        // write placeholder for the row size, since we don't know it yet
-        long sizePosition = dataFile.getFilePointer();
-        dataFile.writeLong(-1);
-        // write out row data
-        int columnCount = ColumnFamily.serializer().serializeWithIndexes(cf, dataFile);
-        // seek back and write the row size (not including the size Long itself)
-        long endPosition = dataFile.getFilePointer();
-        dataFile.seek(sizePosition);
-        long dataSize = endPosition - (sizePosition + 8);
-        assert dataSize > 0;
-        dataFile.writeLong(dataSize);
-        // finally, reset for next row
-        dataFile.seek(endPosition);
-        afterAppend(decoratedKey, startPosition, endPosition - startPosition, columnCount);
+        int columnCount = appender.append(decoratedKey, cf, cf.getSortedColumns().iterator());
+        afterAppend(decoratedKey, startPosition, dataFile.sync() - startPosition, columnCount);
     }
 
     /** TODO: Appending with this method will result in an inaccurate column count. */
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
-        long currentPosition = beforeAppend(decoratedKey);
-        ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
-        assert value.remaining() > 0;
-        dataFile.writeLong(value.remaining());
-        ByteBufferUtil.write(value, dataFile);
-        // see method javadoc
-        afterAppend(decoratedKey, currentPosition, value.remaining(), 0);
+        // FIXME: used for BMT: needs to specify version so that we can _possibly_
+        // continue to support this via Avro 'appendEncoded'
+        throw new RuntimeException("FIXME: BMT support not implemented! Needs versioning.");
     }
 
     public void close() throws IOException
@@ -176,9 +176,8 @@ public class SSTableWriter extends SSTable implements Closeable
         iwriter.close();
 
         // main data
-        long position = dataFile.getFilePointer();
-        dataFile.close(); // calls force
-        FileUtils.truncate(dataFile.getPath(), position);
+        appender.flush();
+        dataFile.close();
 
         // remove the 'tmp' marker from all components
         final Descriptor newdesc = rename(descriptor, components);
@@ -211,6 +210,7 @@ public class SSTableWriter extends SSTable implements Closeable
 
     public long getFilePointer()
     {
-        return dataFile.getFilePointer();
+        throw new RuntimeException("FIXME: not implemented");
+        // return dataFile.getFilePointer();
     }
 }
