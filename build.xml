@@ -107,6 +107,7 @@
         <fail unless="is.source.artifact"
             message="Not a source artifact, stopping here." />
         <mkdir dir="${build.classes}"/>
+        <mkdir dir="${test.lib}"/>
         <mkdir dir="${test.classes}"/>
         <mkdir dir="${build.src.gen-java}"/>
     </target>
@@ -471,11 +472,12 @@
     <attribute name="suitename" />
     <attribute name="inputdir" />
     <attribute name="timeout" />
+    <attribute name="forkmode" default="perTest"/>
     <sequential>
       <echo message="running @{suitename} tests"/>
       <mkdir dir="${build.test.dir}/cassandra"/>
       <mkdir dir="${build.test.dir}/output"/>
-      <junit fork="on" failureproperty="testfailed" maxmemory="1024m" timeout="@{timeout}">
+      <junit fork="on" forkmode="@{forkmode}" failureproperty="testfailed" maxmemory="1024m" timeout="@{timeout}">
         <sysproperty key="net.sourceforge.cobertura.datafile" file="${cobertura.datafile}"/>
         <formatter type="xml" usefile="true"/>
         <formatter type="brief" usefile="false"/>
@@ -511,7 +513,7 @@
   </target>
 
   <target name="distributed-test" depends="build-distributed-test" description="Execute distributed tests: see ${test.distributed.src}/README.txt">
-    <testmacro suitename="distributed" inputdir="${test.distributed.src}" timeout="1200000" />
+    <testmacro suitename="distributed" inputdir="${test.distributed.src}" timeout="1200000" forkmode="once" />
   </target>
 
   <!-- instruments the classes to later create code coverage reports -->
