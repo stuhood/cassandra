@@ -42,6 +42,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -135,6 +136,14 @@ import com.google.common.collect.Multimap;
 public class StorageService implements IEndpointStateChangeSubscriber, StorageServiceMBean
 {
     private static Logger logger_ = LoggerFactory.getLogger(StorageService.class);     
+    /**
+     * Global limits on operation count and throughput that will cause the "fullest"
+     * memtable in the server to be flushed.
+     */
+    private final AtomicLong currentThroughput = new AtomicLong(0);
+    private final AtomicLong currentOperations = new AtomicLong(0);
+    private final long THRESHOLD = DatabaseDescriptor.getGlobalThroughputInMb() * 1024 * 1024;
+    private final long THRESHOLD_COUNT = (long)(DatabaseDescriptor.getGlobalOperationsInMillions() * 1000 * 1000);
 
     public static final int RING_DELAY = 30 * 1000; // delay after which we assume ring has stablized
 
@@ -1172,6 +1181,20 @@ public class StorageService implements IEndpointStateChangeSubscriber, StorageSe
     public int getCurrentGenerationNumber()
     {
         return Gossiper.instance.getCurrentGenerationNumber(FBUtilities.getLocalAddress());
+    }
+
+    /**
+     * Called to inc/dec the current thresholds after a memtable has been mutated or flushed.
+     */
+    public void updateGlobalThresholds(int updateThroughput, int updateOperations)
+    {
+        currentThroughput.getAndAdd(updateThroughput);
+        currentOperations.getAndAdd(updateOperations);
+    }
+
+    public boolean isGlobalThresholdViolated()
+    {
+        return currentThroughput.get() >= this.THRESHOLD || currentOperations.get() >= this.THRESHOLD_COUNT;
     }
 
     public void forceTableCleanup(String tableName, String... columnFamilies) throws IOException, ExecutionException, InterruptedException

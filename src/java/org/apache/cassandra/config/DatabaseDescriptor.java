@@ -1042,6 +1042,18 @@ public class    DatabaseDescriptor
         return indexAccessMode;
     }
 
+    public static long getGlobalThroughputInMb()
+    {
+        // FIXME
+        return 2000;
+    }
+
+    public static double getGlobalOperationsInMillions()
+    {
+        // FIXME
+        return 1.0;
+    }
+
     public static int getIndexedReadBufferSizeInKB()
     {
         return conf.column_index_size_in_kb;

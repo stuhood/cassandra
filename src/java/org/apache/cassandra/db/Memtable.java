@@ -39,6 +39,7 @@ import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,7 +69,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         this.cfs = cfs;
         creationTime = System.currentTimeMillis();
         this.THRESHOLD = cfs.getMemtableThroughputInMB() * 1024 * 1024;
-        this.THRESHOLD_COUNT = (int) (cfs.getMemtableOperationsInMillions() * 1024 * 1024);
+        this.THRESHOLD_COUNT = (int) (cfs.getMemtableOperationsInMillions() * 1000 * 1000);
     }
 
     /**
@@ -110,7 +111,9 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     void freeze()
     {
+        // TODO: should this be volatile?
         isFrozen = true;
+        StorageService.instance.updateGlobalThresholds(-currentThroughput.get(), -currentOperations.get());
     }
 
     /**
@@ -126,8 +129,11 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private void resolve(DecoratedKey key, ColumnFamily cf)
     {
-        currentThroughput.addAndGet(cf.size());
-        currentOperations.addAndGet(cf.getColumnCount());
+        int throughput = cf.size();
+        int operations = cf.getColumnCount();
+        currentThroughput.addAndGet(throughput);
+        currentOperations.addAndGet(operations);
+        StorageService.instance.updateGlobalThresholds(throughput, operations);
 
         ColumnFamily oldCf = columnFamilies.putIfAbsent(key, cf);
         if (oldCf == null)
