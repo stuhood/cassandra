@@ -19,6 +19,7 @@
 
 package org.apache.cassandra.io.sstable;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOError;
 import java.io.IOException;
@@ -32,26 +33,28 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.filter.QueryFilter;
+import org.apache.cassandra.io.Scanner;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.CloseableIterator;
 
-public class SSTableScanner implements CloseableIterator<IColumnIterator>
+
+public final class SSTableScanner implements Scanner
 {
     private static Logger logger = LoggerFactory.getLogger(SSTableScanner.class);
 
-    protected final BufferedRandomAccessFile file;
     public final SSTableReader sstable;
-    private IColumnIterator row;
+    protected IColumnIterator row;
     protected boolean exhausted = false;
     protected Iterator<IColumnIterator> iterator;
-    private QueryFilter filter;
+    protected QueryFilter filter;
+    private final BufferedRandomAccessFile file;
 
     /**
      * @param sstable SSTable to scan.
      */
     SSTableScanner(SSTableReader sstable, int bufferSize, boolean skipCache)
     {
+        this.sstable = sstable;
         try
         {
             this.file = new BufferedRandomAccessFile(new File(sstable.getFilename()), "r", bufferSize, skipCache);
@@ -60,7 +63,6 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         {
             throw new IOError(e);
         }
-        this.sstable = sstable;
     }
 
     /**
@@ -69,6 +71,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
      */
     SSTableScanner(SSTableReader sstable, QueryFilter filter, int bufferSize)
     {
+        this.sstable = sstable;
         try
         {
             this.file = new BufferedRandomAccessFile(sstable.getFilename(), "r", bufferSize);
@@ -77,8 +80,12 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         {
             throw new IOError(e);
         }
-        this.sstable = sstable;
         this.filter = filter;
+    }
+
+    public SSTableReader getSSTable()
+    {
+        return sstable;
     }
 
     public void close() throws IOException
@@ -88,16 +95,18 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
 
     public void seekTo(DecoratedKey seekKey)
     {
+        seekTo(sstable.getPosition(seekKey, SSTableReader.Operator.GE));
+    }
+
+    public void seekTo(long position)
+    {
+        if (position < 0)
+        {
+            exhausted = true;
+            return;
+        }
         try
         {
-            if (row != null)
-                row.close();
-            long position = sstable.getPosition(seekKey, SSTableReader.Operator.GE);
-            if (position < 0)
-            {
-                exhausted = true;
-                return;
-            }
             file.seek(position);
             row = null;
         }
@@ -138,12 +147,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         return iterator.next();
     }
 
-    public void remove()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    protected class KeyScanningIterator implements Iterator<IColumnIterator>
+    private class KeyScanningIterator implements Iterator<IColumnIterator>
     {
         public boolean hasNext()
         {
@@ -151,6 +155,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
             {
                 if (row != null)
                 {
+                    // consume the row to position ourselves at its end
                     row.close();
                     row = null;
                 }
@@ -170,8 +175,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
             {
                 if (filter != null)
                     return row = filter.getSSTableColumnIterator(sstable, file);
-                long start = file.getFilePointer();
-                return row = new SSTableIdentityIterator(sstable, file, start, false);
+                return row = SSTableIdentityIterator.create(sstable, file, false);
             }
             catch (IOException e)
             {
@@ -187,12 +191,18 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         @Override
         public String toString()
         {
-            return getClass().getSimpleName() + "(row=:" + row + ")";
+            return getClass().getSimpleName() + "(@" + file.getFilePointer() + ")";
         }
     }
 
+    public void remove()
+    {
+        throw new UnsupportedOperationException();
+    }
+
     @Override
-    public String toString() {
+    public String toString()
+    {
         return getClass().getSimpleName() + "(" +
                "file=" + file +
                " sstable=" + sstable +

@@ -27,229 +27,82 @@ import java.io.IOError;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
-import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Filter;
 
-public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterator>, IColumnIterator
+public abstract class SSTableIdentityIterator implements Comparable<SSTableIdentityIterator>, IColumnIterator
 {
-    private static final Logger logger = LoggerFactory.getLogger(SSTableIdentityIterator.class);
-
-    private final DecoratedKey key;
-    private final long finishedAt;
-    private final BufferedRandomAccessFile file;
-    // TODO: is rowStart even necessary anymore?
-    private final long rowStart;
-    private final long dataStart;
-    public final long dataSize;
-    public final boolean fromRemote;
-
-    private final ColumnFamily columnFamily;
-    public final int columnCount;
-    private final long columnPosition;
-
+    protected final CFMetaData cfm;
+    protected final IPartitioner partitioner;
+    protected final Descriptor desc;
+    protected final boolean fromRemote;
     // Used by lazilyCompactedRow, so that we see the same things when deserializing the first and second time
-    private final int expireBefore;
+    protected final int expireBefore;
 
-    private final boolean validateColumns;
-
-    /**
-     * Used to iterate through the columns of a row.
-     * @param sstable SSTable we are reading ffrom.
-     * @param file Reading using this file.
-     * @param rowStart The content for the row starts at this pos.
-     * @param checkData if true, do its best to deserialize and check the coherence of row data
-     * @throws IOException
-     */
-    public SSTableIdentityIterator(SSTableReader sstable, BufferedRandomAccessFile file, long rowStart, boolean checkData)
-    throws IOException
+    SSTableIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, boolean fromRemote)
     {
-        this(sstable.metadata, sstable.partitioner, sstable.descriptor, file, rowStart, checkData, false);
-    }
-
-    public SSTableIdentityIterator(CFMetaData metadata, IPartitioner partitioner, Descriptor descriptor, BufferedRandomAccessFile file, long rowStart, boolean fromRemote)
-    throws IOException
-    {
-        this(metadata, partitioner, descriptor, file, rowStart, false, fromRemote);
-    }
-
-    private SSTableIdentityIterator(CFMetaData metadata, IPartitioner partitioner, Descriptor descriptor, BufferedRandomAccessFile file, long rowStart, boolean checkData, boolean fromRemote)
-    throws IOException
-    {
-        this.file = file;
-        this.rowStart = rowStart;
-        this.expireBefore = (int)(System.currentTimeMillis() / 1000);
+        this.cfm = cfm;
+        this.partitioner = partitioner;
+        this.desc = desc;
         this.fromRemote = fromRemote;
-        this.validateColumns = checkData;
-
-        try
-        {
-            // TODO: is rowStart even necessary anymore?
-            file.seek(this.rowStart);
-            this.key = SSTableReader.decodeKey(partitioner,
-                                               descriptor,
-                                               ByteBufferUtil.readWithShortLength(file));
-            this.dataSize = SSTableReader.readRowSize(file, descriptor);
-            if (dataSize < 0 || file.length() < rowStart + dataSize)
-                throw new IOException("Impossible row size " + dataSize + " at " + rowStart);
-            this.dataStart = file.getFilePointer();
-            this.finishedAt = dataStart + dataSize;
-            if (checkData)
-            {
-                try
-                {
-                    IndexHelper.defreezeBloomFilter(file, dataSize, descriptor.usesOldBloomFilter);
-                }
-                catch (Exception e)
-                {
-                    if (e instanceof EOFException)
-                        throw (EOFException) e;
-
-                    logger.debug("Invalid bloom filter for {} in {}; will rebuild it", key, descriptor);
-                    // deFreeze should have left the file position ready to deserialize index
-                }
-                try
-                {
-                    IndexHelper.deserializeIndex(file);
-                }
-                catch (Exception e)
-                {
-                    logger.debug("Invalid row summary in {}; will rebuild it", descriptor);
-                }
-                file.seek(this.dataStart);
-            }
-
-            IndexHelper.skipBloomFilter(file);
-            IndexHelper.skipIndex(file);
-            columnFamily = ColumnFamily.create(metadata);
-            ColumnFamily.serializer().deserializeFromSSTableNoColumns(columnFamily, file);
-            columnCount = file.readInt();
-            columnPosition = file.getFilePointer();
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
-    }
-
-    public DecoratedKey getKey()
-    {
-        return key;
-    }
-
-    public ColumnFamily getColumnFamily()
-    {
-        return columnFamily;
-    }
-
-    public boolean hasNext()
-    {
-        return file.getFilePointer() < finishedAt;
-    }
-
-    public IColumn next()
-    {
-        try
-        {
-            IColumn column = columnFamily.getColumnSerializer().deserialize(file, null, fromRemote, expireBefore);
-            if (validateColumns)
-                column.validateFields(columnFamily.metadata());
-            return column;
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
-        catch (MarshalException e)
-        {
-            throw new IOError(new IOException("Error validating row " + key, e));
-        }
-    }
-
-    public void remove()
-    {
-        throw new UnsupportedOperationException();
-    }
-
-    public String getPath()
-    {
-        return file.getPath();
-    }
-
-    public void echoData(DataOutput out) throws IOException
-    {
-        file.seek(dataStart);
-        while (file.getFilePointer() < finishedAt)
-        {
-            out.write(file.readByte());
-        }
-    }
-
-    public ColumnFamily getColumnFamilyWithColumns() throws IOException
-    {
-        file.seek(columnPosition - 4); // seek to before column count int
-        ColumnFamily cf = columnFamily.cloneMeShallow();
-        ColumnFamily.serializer().deserializeColumns(file, cf, false, fromRemote);
-        if (validateColumns)
-        {
-            try
-            {
-                cf.validateColumnFields();
-            }
-            catch (MarshalException e)
-            {
-                throw new IOException("Error validating row " + key, e);
-            }
-        }
-        return cf;
-    }
-
-    public int compareTo(SSTableIdentityIterator o)
-    {
-        return key.compareTo(o.key);
-    }
-
-    public void reset()
-    {
-        try
-        {
-            file.seek(columnPosition);
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
+        this.expireBefore = (int)(System.currentTimeMillis() / 1000);
     }
 
     /**
-     * @return The width of the row.
+     * Construct an SSTableIdentityIterator for an sstable data file which has arrived
+     * from a remote node, and which might be missing components. This implementation
+     * also forces deserialization of the data to check for corruption.
      */
-    public long getDataSize()
+    public static SSTableIdentityIterator create(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, BufferedRandomAccessFile file, boolean deserializeRowHeader) throws IOException
     {
-        return finishedAt - rowStart;
+        if (desc.isRowIndexed)
+            return new RowIndexedIdentityIterator(cfm, partitioner, desc, file, deserializeRowHeader, true);
+        throw new RuntimeException("FIXME");
     }
 
     /**
-     * @return The count of top-level columns in the row.
+     * Open an SSTI for a local file which we "own", and which has all its components.
      */
-    public int getColumnCount()
+    public static SSTableIdentityIterator create(SSTableReader sstable, BufferedRandomAccessFile file, boolean deserializeRowHeader) throws IOException
     {
-        return columnCount;
+        if (sstable.descriptor.isRowIndexed)
+            return new RowIndexedIdentityIterator(sstable.metadata, sstable.partitioner, sstable.descriptor, file, deserializeRowHeader, false);
+        throw new RuntimeException("FIXME");
     }
 
-    public void close() throws IOException
-    {
-        // creator is responsible for closing file when finished: but skip the content
-        file.seek(finishedAt);
-    }
+    public abstract String getPath();
+
+    public abstract DecoratedKey getKey();
+
+    /** @return An empty column family representing the metadata for the row. */
+    public abstract ColumnFamily getColumnFamily();
+
+    public abstract void remove();
+
+    /** Copy the row content byte-for-byte to the given output.  */
+    public abstract void echoData(DataOutput out) throws IOException;
+
+    /** @return The entire row as a ColumnFamily: must be known to fit in memory. */
+    public abstract ColumnFamily getColumnFamilyWithColumns() throws IOException;
+
+    /**
+     * @return The width of the row: only valid after the iterator has been consumed.
+     */
+    public abstract long getDataSize();
+
+    /**
+     * @return The count of top-level columns in the row: only valid after the iterator
+     * has been consumed.
+     */
+    public abstract int getColumnCount();
+
+    /** Reset the iterator to before the first column in the row. */
+    public abstract void reset();
 }

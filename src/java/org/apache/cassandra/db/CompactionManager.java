@@ -689,7 +689,7 @@ public class CompactionManager implements CompactionManagerMBean
                 writer.mark();
                 try
                 {
-                    SSTableIdentityIterator row = new SSTableIdentityIterator(sstable, dataFile, rowStart, true);
+                    SSTableIdentityIterator row = SSTableIdentityIterator.create(sstable, dataFile, true);
                     if (row.getKey() == null)
                         throw new IOError(new IOException("Unable to read row key from data file"));
                     AbstractCompactedRow compactedRow = controller.getCompactedRow(row);
@@ -1100,9 +1100,9 @@ public class CompactionManager implements CompactionManagerMBean
                   new CompactionController(cfs, cfs.getSSTables(), getDefaultGcBefore(cfs), true));
         }
 
-        protected static List<SSTableScanner> getScanners(Iterable<SSTableReader> sstables, Range range) throws IOException
+        protected static List<org.apache.cassandra.io.Scanner> getScanners(Iterable<SSTableReader> sstables, Range range) throws IOException
         {
-            ArrayList<SSTableScanner> scanners = new ArrayList<SSTableScanner>();
+            ArrayList<org.apache.cassandra.io.Scanner> scanners = new ArrayList<org.apache.cassandra.io.Scanner>();
             for (SSTableReader sstable : sstables)
                 scanners.add(sstable.getDirectScanner(FILE_BUFFER_SIZE, range));
             return scanners;

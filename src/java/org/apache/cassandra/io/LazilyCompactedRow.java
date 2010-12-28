@@ -145,7 +145,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
     {
         int n = 0;
         for (SSTableIdentityIterator row : rows)
-            n += row.columnCount;
+            n += row.getColumnCount();
         return n;
     }
 

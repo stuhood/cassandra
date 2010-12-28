@@ -35,9 +35,9 @@ import com.google.common.collect.AbstractIterator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.CompactionManager;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
+import org.apache.cassandra.io.Scanner;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
-import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.CloseableIterator;
@@ -71,20 +71,20 @@ implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
         this(type, getScanners(sstables), controller);
     }
 
-    protected CompactionIterator(CompactionType type, List<SSTableScanner> scanners, CompactionController controller)
+    protected CompactionIterator(CompactionType type, List<Scanner> scanners, CompactionController controller)
     {
         this.type = type;
         this.controller = controller;
         this.source = MergeIterator.get(scanners, ICOMP, new Reducer());
         row = 0;
         totalBytes = bytesRead = 0;
-        for (SSTableScanner scanner : scanners)
+        for (Scanner scanner : scanners)
             totalBytes += scanner.getFileLength();
     }
 
-    protected static List<SSTableScanner> getScanners(Iterable<SSTableReader> sstables) throws IOException
+    protected static List<Scanner> getScanners(Iterable<SSTableReader> sstables) throws IOException
     {
-        ArrayList<SSTableScanner> scanners = new ArrayList<SSTableScanner>();
+        ArrayList<Scanner> scanners = new ArrayList<Scanner>();
         for (SSTableReader sstable : sstables)
             scanners.add(sstable.getDirectScanner(FILE_BUFFER_SIZE));
         return scanners;
@@ -148,9 +148,9 @@ implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
         source.close();
     }
 
-    protected Iterable<SSTableScanner> getScanners()
+    protected Iterable<Scanner> getScanners()
     {
-        return (Iterable<SSTableScanner>)(source.iterators());
+        return (Iterable<Scanner>)(source.iterators());
     }
 
     public String toString()
@@ -193,7 +193,7 @@ implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
                 if ((row++ % 1000) == 0)
                 {
                     bytesRead = 0;
-                    for (SSTableScanner scanner : getScanners())
+                    for (Scanner scanner : getScanners())
                     {
                         bytesRead += scanner.getFilePointer();
                     }

@@ -40,6 +40,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.io.BoundedScanner;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileDataInput;
@@ -680,9 +681,9 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
     * @param range the range of keys to cover
     * @return A Scanner for seeking over the rows of the SSTable.
     */
-    public SSTableScanner getDirectScanner(int bufferSize, Range range)
+    public org.apache.cassandra.io.Scanner getDirectScanner(int bufferSize, Range range)
     {
-        return new SSTableBoundedScanner(this, bufferSize, true, range);
+        return new BoundedScanner(getDirectScanner(bufferSize), range);
     }
 
     public FileDataInput getFileDataInput(DecoratedKey decoratedKey, int bufferSize)

@@ -198,12 +198,11 @@ public class Rebuilder implements CompactionInfo.Holder
                 while (!dfile.isEOF())
                 {
                     long rowPosition = dfile.getFilePointer();
-                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata,
-                                                                               cfs.partitioner,
-                                                                               desc,
-                                                                               dfile,
-                                                                               rowPosition,
-                                                                               true);
+                    SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata,
+                                                                                  cfs.partitioner,
+                                                                                  desc,
+                                                                                  dfile,
+                                                                                  true);
                     updateCache(iter);
                     // close the iterator to position ourself at the end of the row
                     iter.close();
@@ -228,8 +227,7 @@ public class Rebuilder implements CompactionInfo.Holder
      * that on the receiving node all counter column goes through the
      * deserialization from remote code path (i.e, it must be cleared from its
      * delta) to maintain the invariant that on a given node, only increments
-     * that the node originated are delta (and copy of those must not be delta).
-     *
+     * that the node originated are delta (and copy of those must not be delta).  *
      * Since after streaming row indexation goes through every streamed
      * sstable, we use this opportunity to ensure this property. This is the
      * goal of this specific CommutativeRowIndexer.
@@ -255,12 +253,11 @@ public class Rebuilder implements CompactionInfo.Holder
                 long dfileLength = dfile.length();
                 while (!dfile.isEOF())
                 {
-                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata,
-                                                                               cfs.partitioner,
-                                                                               desc,
-                                                                               dfile,
-                                                                               dfile.getFilePointer(),
-                                                                               true);
+                    SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata,
+                                                                                  cfs.partitioner,
+                                                                                  desc,
+                                                                                  dfile,
+                                                                                  true);
                     updateCache(iter);
 
                     AbstractCompactedRow row = controller.getCompactedRow(iter);
