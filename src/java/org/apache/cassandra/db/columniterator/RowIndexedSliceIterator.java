@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /**
  *  A Column Iterator over SSTable
  */
-public class SSTableSliceIterator implements IColumnIterator
+public class RowIndexedSliceIterator implements IColumnIterator
 {
     private final FileDataInput file;
     private final FileMark mark;
@@ -48,7 +48,7 @@ public class SSTableSliceIterator implements IColumnIterator
     private IColumnIterator reader;
     private DecoratedKey key;
 
-    public SSTableSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public RowIndexedSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.key = key;
         mark = null;
@@ -82,7 +82,7 @@ public class SSTableSliceIterator implements IColumnIterator
      * @param finishColumn The end of the slice
      * @param reversed Results are returned in reverse order iff reversed is true.
      */
-    public SSTableSliceIterator(SSTableReader sstable, FileDataInput file, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public RowIndexedSliceIterator(SSTableReader sstable, FileDataInput file, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.file = file;
         try

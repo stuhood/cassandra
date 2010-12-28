@@ -30,7 +30,7 @@ import org.apache.commons.lang.StringUtils;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
-import org.apache.cassandra.db.columniterator.SSTableNamesIterator;
+import org.apache.cassandra.db.columniterator.RowIndexedNamesIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
@@ -57,12 +57,18 @@ public class NamesQueryFilter implements IFilter
 
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
     {
-        return new SSTableNamesIterator(sstable, key, columns);
+        if (sstable.descriptor.version.isRowIndexed)
+            return new RowIndexedNamesIterator(sstable, key, columns);
+        // TODO
+        throw new RuntimeException("Not implemented!");
     }
     
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
     {
-        return new SSTableNamesIterator(sstable, file, columns);
+        if (sstable.descriptor.version.isRowIndexed)
+            return new RowIndexedNamesIterator(sstable, file, columns);
+        // TODO
+        throw new RuntimeException("Not implemented!");
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

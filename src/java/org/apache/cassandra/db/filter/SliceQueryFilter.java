@@ -34,7 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
-import org.apache.cassandra.db.columniterator.SSTableSliceIterator;
+import org.apache.cassandra.db.columniterator.RowIndexedSliceIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
@@ -63,12 +63,18 @@ public class SliceQueryFilter implements IFilter
 
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
     {
-        return new SSTableSliceIterator(sstable, key, start, finish, reversed);
+        if (sstable.descriptor.version.isRowIndexed)
+            return new RowIndexedSliceIterator(sstable, key, start, finish, reversed);
+        // TODO
+        throw new RuntimeException("Not implemented!");
     }
     
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
     {
-        return new SSTableSliceIterator(sstable, file, start, finish, reversed);
+        if (sstable.descriptor.version.isRowIndexed)
+            return new RowIndexedSliceIterator(sstable, file, start, finish, reversed);
+        // TODO: switch version
+        throw new RuntimeException("Not implemented!");
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

@@ -28,6 +28,7 @@ import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.ExpiringColumn;
 import org.apache.cassandra.db.Column;
+import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.filter.QueryFilter;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.marshal.UTF8Type;
@@ -39,6 +40,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import static org.apache.cassandra.io.sstable.SSTableUtils.tempSSTableFile;
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
 import static org.apache.cassandra.utils.ByteBufferUtil.hexToBytes;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.apache.cassandra.Util;
@@ -206,13 +208,12 @@ public class SSTableExportTest extends SchemaLoader
 
         reader = SSTableReader.open(Descriptor.fromFilename(tempSS2.getPath()));
         QueryFilter qf = QueryFilter.getNamesFilter(Util.dk("rowA"), new QueryPath("Standard1", null, null), ByteBufferUtil.bytes("name"));
-        ColumnFamily cf = qf.getSSTableColumnIterator(reader).getColumnFamily();
-        assertTrue(cf != null);
-        assertTrue(cf.getColumn(ByteBufferUtil.bytes("name")).value().equals(hexToBytes("76616c")));
+        IColumn c = qf.getSSTableColumnIterator(reader).next();
+        assertEquals(ByteBufferUtil.bytes("name"), c.name());
+        assertEquals(hexToBytes("76616c"), c.value());
 
         qf = QueryFilter.getNamesFilter(Util.dk("rowExclude"), new QueryPath("Standard1", null, null), ByteBufferUtil.bytes("name"));
-        cf = qf.getSSTableColumnIterator(reader).getColumnFamily();
-        assert cf == null;
+        assert !qf.getSSTableColumnIterator(reader).hasNext();
     }
 
     @Test
