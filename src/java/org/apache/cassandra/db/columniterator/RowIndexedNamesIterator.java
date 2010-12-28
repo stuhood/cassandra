@@ -43,16 +43,16 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Filter;
 
-public class SSTableNamesIterator extends SimpleAbstractColumnIterator implements IColumnIterator
+public class RowIndexedNamesIterator extends SimpleAbstractColumnIterator implements IColumnIterator
 {
-    private static Logger logger = LoggerFactory.getLogger(SSTableNamesIterator.class);
+    private static Logger logger = LoggerFactory.getLogger(RowIndexedNamesIterator.class);
 
     private ColumnFamily cf;
     private Iterator<IColumn> iter;
     public final SortedSet<ByteBuffer> columns;
     public DecoratedKey key;
 
-    public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, SortedSet<ByteBuffer> columns)
+    public RowIndexedNamesIterator(SSTableReader sstable, DecoratedKey key, SortedSet<ByteBuffer> columns)
     {
         assert columns != null;
         this.columns = columns;
@@ -77,7 +77,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
         }
     }
 
-    public SSTableNamesIterator(SSTableReader sstable, FileDataInput file, SortedSet<ByteBuffer> columns)
+    public RowIndexedNamesIterator(SSTableReader sstable, FileDataInput file, SortedSet<ByteBuffer> columns)
     {
         assert columns != null;
         this.columns = columns;

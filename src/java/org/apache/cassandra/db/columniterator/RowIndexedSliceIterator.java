@@ -40,7 +40,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 /**
  *  A Column Iterator over SSTable
  */
-public class SSTableSliceIterator implements IColumnIterator
+public class RowIndexedSliceIterator implements IColumnIterator
 {
     private final FileDataInput file;
     private final FileMark mark;
@@ -49,7 +49,7 @@ public class SSTableSliceIterator implements IColumnIterator
     private IColumnIterator reader;
     private DecoratedKey key;
 
-    public SSTableSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public RowIndexedSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.key = key;
         mark = null;
@@ -79,12 +79,11 @@ public class SSTableSliceIterator implements IColumnIterator
      * If this class creates, it will close the underlying file when #close() is called.
      * If a caller passes a non-null argument, this class will NOT close the underlying file when the iterator is closed (i.e. the caller is responsible for closing the file)
      * In all cases the caller should explicitly #close() this iterator.
-     * @param key The key the requested slice resides under
      * @param startColumn The start of the slice
      * @param finishColumn The end of the slice
      * @param reversed Results are returned in reverse order iff reversed is true.
      */
-    public SSTableSliceIterator(SSTableReader sstable, FileDataInput file, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public RowIndexedSliceIterator(SSTableReader sstable, FileDataInput file, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.file = file;
         try
