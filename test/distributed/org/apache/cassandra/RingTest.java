@@ -53,7 +53,7 @@ public class RingTest extends TestBase
 
         controller.nodetool("decommission", failHost);
         Failure failure = controller.failHosts(failHost);
-        controller.wipeHost(failHost);
+        controller.wipeHosts(failHost);
 
         Thread.sleep(1000 * 30);
 
