@@ -76,11 +76,14 @@ public class MutationTest extends TestBase
         assertColumnEqual("c2", "v2", 0, col4);
 
         List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
+        List<ColumnOrSuperColumn> cocs2 = get_slice(client, key, "Standard1", ConsistencyLevel.ONE);
         coscs.add((new ColumnOrSuperColumn()).setColumn(col3));
         coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
+        assertColumnEqual("c1", "v1", 0, coscs2.get(0));
+        assertColumnEqual("c1", "v1", 0, coscs2.get(1));
         assertEquals(
-            get_slice(client, key, "Standard1", ConsistencyLevel.ONE),
-            coscs
+            coscs,
+            coscs2
             );
     }
 
@@ -161,11 +164,14 @@ public class MutationTest extends TestBase
 
             // verify slice
             List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
+            List<ColumnOrSuperColumn> coscs2 = get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM);
             coscs.add((new ColumnOrSuperColumn()).setColumn(col3));
             coscs.add((new ColumnOrSuperColumn()).setColumn(col4));
+            assertColumnEqual("c1", "v1", 0, cocs2.get(0));
+            assertColumnEqual("c2", "v2", 0, cocs2.get(1));
             assertEquals(
-                get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM),
-                coscs
+                coscs,
+                coscs2
                 );
         }
         finally
