@@ -31,6 +31,7 @@ import java.util.List;
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.utils.WrappedRunnable;
+import  org.apache.thrift.TException;
 
 import org.apache.cassandra.CassandraServiceController.Failure;
 
@@ -61,24 +62,48 @@ public class MutationTest extends TestBase
             ByteBuffer.wrap("v1".getBytes()),
             0
             );
-        client.insert(key, cp, col1, cl);
+        insert(client, key, cp, col1, cl);
         Column col2 = new Column(
             ByteBuffer.wrap("c2".getBytes()),
             ByteBuffer.wrap("v2".getBytes()),
             0
             );
-        client.insert(key, cp, col2, cl);
+        insert(client, key, cp, col2, cl);
 
         Thread.sleep(100);
 
         // verify get
-        ColumnPath cpath = new ColumnPath("Standard1");
-        cpath.setColumn("c1".getBytes());
         assertEquals(
-            client.get(key, cpath, cl).column,
+            getColumn(client, key, "Standard1", "c1", cl),
             col1
             );
 
+        List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
+        coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
+        coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
+        assertEquals(
+            get_slice(client, key, cp, cl),
+            coscs
+            );
+    }
+
+    public void insert(Cassandra.Client client, ByteBuffer key, ColumnParent cp, Column col, ConsistencyLevel cl)
+        throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
+        client.insert(key, cp, col, cl);
+    }
+
+    public Column getColumn(Cassandra.Client client, ByteBuffer key, String cf, String col, ConsistencyLevel cl)
+        throws InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException
+    {
+        ColumnPath cpath = new ColumnPath(cf);
+        cpath.setColumn(col.getBytes());
+        return client.get(key, cpath, cl).column;
+    }
+
+    public List<ColumnOrSuperColumn> get_slice(Cassandra.Client client, ByteBuffer key, ColumnParent cp, ConsistencyLevel cl)
+      throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
         // verify slice
         SlicePredicate sp = new SlicePredicate();
         sp.setSlice_range(
@@ -89,13 +114,7 @@ public class MutationTest extends TestBase
                 1000
                 )
             );
-        List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
-        coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
-        coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
-        assertEquals(
-            client.get_slice(key, cp, sp, cl),
-            coscs
-            );
+        return client.get_slice(key, cp, sp, cl);
     }
 
     @Test
@@ -134,28 +153,17 @@ public class MutationTest extends TestBase
             client.set_keyspace(KEYSPACE);
 
             // verify get
-            ColumnPath cpath = new ColumnPath("Standard1");
-            cpath.setColumn("c1".getBytes());
             assertEquals(
-                client.get(key, cpath, cl).column,
+                getColumn(client, key, "Standard1", "c1", cl),
                 col1
                 );
 
             // verify slice
-            SlicePredicate sp = new SlicePredicate();
-            sp.setSlice_range(
-                new SliceRange(
-                    ByteBuffer.wrap(new byte[0]),
-                    ByteBuffer.wrap(new byte[0]),
-                    false,
-                    1000
-                    )
-                );
             List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
             coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
             coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
             assertEquals(
-                client.get_slice(key, cp, sp, cl),
+                get_slice(client, key, cp, cl),
                 coscs
                 );
         }
