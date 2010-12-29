@@ -119,20 +119,21 @@ public class CassandraServiceController
     
     private void waitForNodeInitialization(InetAddress addr)
     {
-        while (true)
+        wait: while (true)
         {
             try
             {
-                Cassandra.Client client = createClient(addr);
-
-                client.describe_cluster_name();
-                break;
+                // confirm that the node has communicated with other nodes
+                Map<String, List<String>> versions = createClient(addr).describe_schema_versions();
+                for (Map.Entry<String,List<String>> v : versions.entrySet())
+                    if (!v.getKey().equals("UNREACHABLE") && v.getValue().size() > 1)
+                        break wait;
             }
-            catch (TException e)
+            catch (Exception e)
             {
                 try
                 {
-                    Thread.sleep(1000);
+                    Thread.sleep(100);
                 }
                 catch (InterruptedException ie)
                 {
@@ -292,6 +293,22 @@ public class CassandraServiceController
     public List<InetAddress> getHosts()
     {
         return hosts;
+    }
+
+    public InetAddress getPrivateHost(InetAddress publicHost)
+    {
+        for (Instance instance : cluster.getInstances())
+            if (publicHost.equals(instance.getPublicAddress()))
+                return instance.getPrivateAddress();
+        throw new RuntimeException("No private host for public host " + publicHost);
+    }
+
+    public InetAddress getPublicHost(InetAddress privateHost)
+    {
+        for (Instance instance : cluster.getInstances())
+            if (privateHost.equals(instance.getPrivateAddress()))
+                return instance.getPublicAddress();
+        throw new RuntimeException("No public host for private host " + privateHost);
     }
 
     class Failure

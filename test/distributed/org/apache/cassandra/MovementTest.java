@@ -96,8 +96,8 @@ public class MovementTest extends TestBase
                     1000
                     )
                 );
-            assertEquals(client.get_slice(entry.getKey(), STANDARD, sp, ConsistencyLevel.ONE),
-                         entry.getValue());
+            assertEquals(entry.getValue(),
+                         client.get_slice(entry.getKey(), STANDARD, sp, ConsistencyLevel.ONE));
         }
     }
 
@@ -124,5 +124,65 @@ public class MovementTest extends TestBase
 
         // check that all keys still exist
         verifyBatch(client, rows);
+    }
+
+    @Test
+    public void testDecomissionAndRepair() throws Exception
+    {
+        final String keyspace = "TestDecomissionAndRepair";
+        addKeyspace(keyspace, 2);
+        List<InetAddress> hosts = controller.getHosts();
+
+        // store data
+        Map<ByteBuffer,List<ColumnOrSuperColumn>> rows;
+        Cassandra.Client client = controller.createClient(hosts.get(0));
+        client.set_keyspace(keyspace);
+        rows = insertBatch(client);
+
+        // decommission and wipe one node: it will choose a new token
+        InetAddress failHost = hosts.get(hosts.size()-1);
+        controller.nodetool("decommission", failHost);
+        Failure failure = controller.failHosts(failHost);
+        try
+        {
+            controller.wipeHosts(failHost);
+        }
+        finally
+        {
+            failure.resolve();
+            // TODO: failure resolution sleeps for gossip, but RMI/nodetool
+            // aren't available until a little later
+            Thread.sleep(1000 * 15);
+        }
+
+        // repair the recommissioned node
+        controller.nodetool("repair " + keyspace, failHost);
+
+        // determine the other replica for the wiped node
+        InetAddress otherReplica = null;
+        String privateFailed = controller.getPrivateHost(failHost).getHostAddress();
+        List<TokenRange> ring = client.describe_ring(keyspace);
+        for (TokenRange range : ring)
+        {
+            int i = range.endpoints.indexOf(privateFailed);
+            if (i == -1)
+                continue;
+            otherReplica = InetAddress.getByName(range.endpoints.get(i == 0 ? 1 : 0));
+            break;
+        }
+        assert otherReplica != null;
+
+        // kill other replica, and check that all keys still exist
+        failure = controller.failHosts(controller.getPublicHost(otherReplica));
+        try
+        {
+            client = controller.createClient(failHost);
+            client.set_keyspace(keyspace);
+            verifyBatch(client, rows);
+        }
+        finally
+        {
+            failure.resolve();
+        }
     }
 }
