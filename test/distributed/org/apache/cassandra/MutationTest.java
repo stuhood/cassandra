@@ -52,47 +52,45 @@ public class MutationTest extends TestBase
 
         client.set_keyspace(KEYSPACE);
 
-        String rawKey = String.format("test.key.%d", System.currentTimeMillis());
-        ByteBuffer key = ByteBuffer.wrap(rawKey.getBytes());
+        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
-        ColumnParent     cp = new ColumnParent("Standard1");
         Column col1 = new Column(
             ByteBuffer.wrap("c1".getBytes()),
             ByteBuffer.wrap("v1".getBytes()),
             0
             );
-        insert(client, key, cp, col1, ConsistencyLevel.ONE);
+        insert(client, key, "Standard1", col1, ConsistencyLevel.ONE);
         Column col2 = new Column(
             ByteBuffer.wrap("c2".getBytes()),
             ByteBuffer.wrap("v2".getBytes()),
             0
             );
-        insert(client, key, cp, col2, ConsistencyLevel.ONE);
+        insert(client, key, "Standard1", col2, ConsistencyLevel.ONE);
 
         Thread.sleep(100);
 
-        // verify get
-        assertEquals(
-            getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE),
-            col1
-            );
+        Column col3 = getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE);
+        assertColumnEqual("c1", "v1", 0, col3);
+
+        Column col4 = getColumn(client, key, "Standard1", "c2", ConsistencyLevel.ONE);
+        assertColumnEqual("c2", "v2", 0, col4);
 
         List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
-        coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
+        coscs.add((new ColumnOrSuperColumn()).setColumn(col3));
         coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
         assertEquals(
-            get_slice(client, key, cp, ConsistencyLevel.ONE),
+            get_slice(client, key, "Standard1", ConsistencyLevel.ONE),
             coscs
             );
     }
 
-    public void insert(Cassandra.Client client, ByteBuffer key, ColumnParent cp, Column col, ConsistencyLevel cl)
+    protected void insert(Cassandra.Client client, ByteBuffer key, String cf, Column col, ConsistencyLevel cl)
         throws InvalidRequestException, UnavailableException, TimedOutException, TException
     {
-        client.insert(key, cp, col, cl);
+        client.insert(key, new ColumnParent(cf), col, cl);
     }
 
-    public Column getColumn(Cassandra.Client client, ByteBuffer key, String cf, String col, ConsistencyLevel cl)
+    protected Column getColumn(Cassandra.Client client, ByteBuffer key, String cf, String col, ConsistencyLevel cl)
         throws InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException
     {
         ColumnPath cpath = new ColumnPath(cf);
@@ -100,10 +98,9 @@ public class MutationTest extends TestBase
         return client.get(key, cpath, cl).column;
     }
 
-    public List<ColumnOrSuperColumn> get_slice(Cassandra.Client client, ByteBuffer key, ColumnParent cp, ConsistencyLevel cl)
+    protected List<ColumnOrSuperColumn> get_slice(Cassandra.Client client, ByteBuffer key, String cf, ConsistencyLevel cl)
       throws InvalidRequestException, UnavailableException, TimedOutException, TException
     {
-        // verify slice
         SlicePredicate sp = new SlicePredicate();
         sp.setSlice_range(
             new SliceRange(
@@ -113,7 +110,14 @@ public class MutationTest extends TestBase
                 1000
                 )
             );
-        return client.get_slice(key, cp, sp, cl);
+        return client.get_slice(key, new ColumnParent(cf), sp, cl);
+    }
+
+    protected void assertColumnEqual(String name, String value, long timestamp, Column col)
+    {
+        assertEquals(ByteBuffer.wrap(name.getBytes()), col.name);
+        assertEquals(ByteBuffer.wrap(value.getBytes()), col.value);
+        assertEquals(timestamp, col.timestamp);
     }
 
     @Test
@@ -124,22 +128,20 @@ public class MutationTest extends TestBase
 
         client.set_keyspace(KEYSPACE);
 
-        String rawKey = String.format("test.key.%d", System.currentTimeMillis());
-        ByteBuffer key = ByteBuffer.wrap(rawKey.getBytes());
+        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
-        ColumnParent     cp = new ColumnParent("Standard1");
         Column col1 = new Column(
             ByteBuffer.wrap("c1".getBytes()),
             ByteBuffer.wrap("v1".getBytes()),
             0
             );
-        client.insert(key, cp, col1, ConsistencyLevel.QUORUM);
+        insert(client, key, "Standard1", col1, ConsistencyLevel.QUORUM);
         Column col2 = new Column(
             ByteBuffer.wrap("c2".getBytes()),
             ByteBuffer.wrap("v2".getBytes()),
             0
             );
-        client.insert(key, cp, col2, ConsistencyLevel.QUORUM);
+        insert(client, key, "Standard1", col2, ConsistencyLevel.QUORUM);
 
         Thread.sleep(100);
 
@@ -151,17 +153,18 @@ public class MutationTest extends TestBase
             client.set_keyspace(KEYSPACE);
 
             // verify get
-            assertEquals(
-                getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM),
-                col1
-                );
+            Column col3 = getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE);
+            assertColumnEqual("c1", "v1", 0, col3);
+            Column col4 = getColumn(client, key, "Standard1", "c2", ConsistencyLevel.ONE);
+            assertColumnEqual("c2", "v2", 0, col4);
+
 
             // verify slice
             List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
-            coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
-            coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
+            coscs.add((new ColumnOrSuperColumn()).setColumn(col3));
+            coscs.add((new ColumnOrSuperColumn()).setColumn(col4));
             assertEquals(
-                get_slice(client, key, cp, ConsistencyLevel.QUORUM),
+                get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM),
                 coscs
                 );
         }
