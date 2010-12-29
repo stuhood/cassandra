@@ -56,25 +56,24 @@ public class MutationTest extends TestBase
         ByteBuffer key = ByteBuffer.wrap(rawKey.getBytes());
 
         ColumnParent     cp = new ColumnParent("Standard1");
-        ConsistencyLevel cl = ConsistencyLevel.ONE;
         Column col1 = new Column(
             ByteBuffer.wrap("c1".getBytes()),
             ByteBuffer.wrap("v1".getBytes()),
             0
             );
-        insert(client, key, cp, col1, cl);
+        insert(client, key, cp, col1, ConsistencyLevel.ONE);
         Column col2 = new Column(
             ByteBuffer.wrap("c2".getBytes()),
             ByteBuffer.wrap("v2".getBytes()),
             0
             );
-        insert(client, key, cp, col2, cl);
+        insert(client, key, cp, col2, ConsistencyLevel.ONE);
 
         Thread.sleep(100);
 
         // verify get
         assertEquals(
-            getColumn(client, key, "Standard1", "c1", cl),
+            getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE),
             col1
             );
 
@@ -82,7 +81,7 @@ public class MutationTest extends TestBase
         coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
         coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
         assertEquals(
-            get_slice(client, key, cp, cl),
+            get_slice(client, key, cp, ConsistencyLevel.ONE),
             coscs
             );
     }
@@ -129,19 +128,18 @@ public class MutationTest extends TestBase
         ByteBuffer key = ByteBuffer.wrap(rawKey.getBytes());
 
         ColumnParent     cp = new ColumnParent("Standard1");
-        ConsistencyLevel cl = ConsistencyLevel.QUORUM;
         Column col1 = new Column(
             ByteBuffer.wrap("c1".getBytes()),
             ByteBuffer.wrap("v1".getBytes()),
             0
             );
-        client.insert(key, cp, col1, cl);
+        client.insert(key, cp, col1, ConsistencyLevel.QUORUM);
         Column col2 = new Column(
             ByteBuffer.wrap("c2".getBytes()),
             ByteBuffer.wrap("v2".getBytes()),
             0
             );
-        client.insert(key, cp, col2, cl);
+        client.insert(key, cp, col2, ConsistencyLevel.QUORUM);
 
         Thread.sleep(100);
 
@@ -154,7 +152,7 @@ public class MutationTest extends TestBase
 
             // verify get
             assertEquals(
-                getColumn(client, key, "Standard1", "c1", cl),
+                getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM),
                 col1
                 );
 
@@ -163,7 +161,7 @@ public class MutationTest extends TestBase
             coscs.add((new ColumnOrSuperColumn()).setColumn(col1));
             coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
             assertEquals(
-                get_slice(client, key, cp, cl),
+                get_slice(client, key, cp, ConsistencyLevel.QUORUM),
                 coscs
                 );
         }
