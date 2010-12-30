@@ -72,33 +72,6 @@ public class MutationTest extends TestBase
     }
 
 
-    List<InetAddress> endpointsForKey(InetAddress seed, ByteBuffer key)
-        throws IOException
-    {
-        RingCache ring = new RingCache(KEYSPACE, new RandomPartitioner(), seed.getHostAddress(), 9160);
-        List<InetAddress> privateendpoints = ring.getEndpoint(key);
-        List<InetAddress> endpoints = new ArrayList<InetAddress>();
-        for (InetAddress endpoint : privateendpoints)
-        {
-            endpoints.add(controller.getPublicHost(endpoint));
-        }
-        return endpoints;
-    }
-
-    InetAddress nonEndpointForKey(InetAddress seed, ByteBuffer key)
-        throws IOException
-    {
-        List<InetAddress> endpoints = endpointsForKey(seed, key);
-        for (InetAddress host : controller.getHosts())
-        {
-            if (!endpoints.contains(host))
-            {
-                return host;
-            }
-        }
-        return null;
-    }
-
     @Test
     public void testWriteAllReadOne() throws Exception
     {
@@ -211,5 +184,33 @@ public class MutationTest extends TestBase
         assertEquals(ByteBuffer.wrap(value.getBytes()), col.value);
         assertEquals(timestamp, col.timestamp);
     }
+
+    protected List<InetAddress> endpointsForKey(InetAddress seed, ByteBuffer key)
+        throws IOException
+    {
+        RingCache ring = new RingCache(KEYSPACE, new RandomPartitioner(), seed.getHostAddress(), 9160);
+        List<InetAddress> privateendpoints = ring.getEndpoint(key);
+        List<InetAddress> endpoints = new ArrayList<InetAddress>();
+        for (InetAddress endpoint : privateendpoints)
+        {
+            endpoints.add(controller.getPublicHost(endpoint));
+        }
+        return endpoints;
+    }
+
+    protected InetAddress nonEndpointForKey(InetAddress seed, ByteBuffer key)
+        throws IOException
+    {
+        List<InetAddress> endpoints = endpointsForKey(seed, key);
+        for (InetAddress host : controller.getHosts())
+        {
+            if (!endpoints.contains(host))
+            {
+                return host;
+            }
+        }
+        return null;
+    }
+    
 
 }
