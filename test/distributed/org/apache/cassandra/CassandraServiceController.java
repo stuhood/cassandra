@@ -147,12 +147,12 @@ public class CassandraServiceController
         LOG.info("Starting up cluster...");
 
         config = new CompositeConfiguration();
-        config.addConfiguration(new PropertiesConfiguration("whirr-default.properties"));
         if (System.getProperty("whirr.config") != null)
         {
             config.addConfiguration(
                 new PropertiesConfiguration(System.getProperty("whirr.config")));
         }
+        config.addConfiguration(new PropertiesConfiguration("whirr-default.properties"));
 
         clusterSpec = new ClusterSpec(config);
         if (clusterSpec.getPrivateKey() == null)
