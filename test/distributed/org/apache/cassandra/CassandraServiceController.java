@@ -228,6 +228,11 @@ public class CassandraServiceController
         callOnHosts("apache/cassandra/wipe-state", hosts);
     }
 
+    public Failure failHosts(List<InetAddress> hosts)
+    {
+        return new Failure(hosts.toArray(new InetAddress[hosts.size()])).trigger();
+    }
+
     public Failure failHosts(InetAddress... hosts)
     {
         return new Failure(hosts).trigger();
@@ -276,6 +281,7 @@ public class CassandraServiceController
     class Failure
     {
         private InetAddress[] hosts;
+
         public Failure(InetAddress... hosts)
         {
             this.hosts = hosts;

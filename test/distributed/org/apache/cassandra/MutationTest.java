@@ -22,6 +22,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.IOException;
 import java.io.Writer;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
@@ -69,6 +70,34 @@ public class MutationTest extends TestBase
         assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
     }
 
+
+    List<InetAddress> endpointsForKey(InetAddress seed, ByteBuffer key)
+        throws IOException
+    {
+        RingCache ring = new RingCache(KEYSPACE, new RandomPartitioner(), seed.getHostAddress(), 9160);
+        List<InetAddress> privateendpoints = ring.getEndpoint(key);
+        List<InetAddress> endpoints = new ArrayList<InetAddress>();
+        for (InetAddress endpoint : privateendpoints)
+        {
+            endpoints.add(controller.getPublicHost(endpoint));
+        }
+        return endpoints;
+    }
+
+    InetAddress nonEndpointForKey(InetAddress seed, ByteBuffer key)
+        throws IOException
+    {
+        List<InetAddress> endpoints = endpointsForKey(seed, key);
+        for (InetAddress host : controller.getHosts())
+        {
+            if (!endpoints.contains(host))
+            {
+                return host;
+            }
+        }
+        return null;
+    }
+
     @Test
     public void testWriteAllReadOne() throws Exception
     {
@@ -78,36 +107,17 @@ public class MutationTest extends TestBase
         client.set_keyspace(KEYSPACE);
 
         ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+
         insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ALL);
         assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
 
-        RingCache ring = new RingCache(KEYSPACE, new RandomPartitioner(), hosts.get(0).getHostAddress(), 9160);
-        List<InetAddress> privateendpoints = ring.getEndpoint(key);
-        List<InetAddress> endpoints = new ArrayList<InetAddress>();
-        for (InetAddress endpoint : privateendpoints)
-        {
-            endpoints.add(controller.getPublicHost(endpoint));
-        }
-        List<Failure> failures = new ArrayList<Failure>();
-        InetAddress coordinator = null;
+        List<InetAddress> endpoints = endpointsForKey(hosts.get(0), key);
+        InetAddress coordinator = nonEndpointForKey(hosts.get(0), key);
+        Failure failure = controller.failHosts(endpoints.subList(1, endpoints.size()-1));
 
-        for (InetAddress host : hosts)
-        {
-            if (!endpoints.contains(host))
-            {
-                coordinator = host;
-                break;
-            }
-        }
+        Thread.sleep(10000); // let gossip catch up
 
         try {
-            for(int i = 0; i < endpoints.size() - 1; i++) {
-                failures.add(controller.failHosts(endpoints.get(i)));
-            }
-            assertEquals(endpoints.size() - 1, failures.size());
-            InetAddress livenode = endpoints.get(endpoints.size() - 1);
-
-            Thread.sleep(10000);
             client = controller.createClient(coordinator);
             client.set_keyspace(KEYSPACE);
 
@@ -117,13 +127,10 @@ public class MutationTest extends TestBase
                 insert(client, key, "Standard1", "c3", "v3", 0, ConsistencyLevel.ALL);
                 assert false;
             } catch (UnavailableException e) {
-                //[this is good]
+                // [this is good]
             }
         } finally {
-            for (Failure failure : failures) {
-                failure.resolve();
-                Thread.sleep(100);
-            }
+            failure.resolve();
         }
     }
 
