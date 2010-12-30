@@ -20,12 +20,16 @@ package org.apache.cassandra;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.URI;
 import java.util.*;
 
 import org.apache.cassandra.thrift.Cassandra;
 import org.apache.cassandra.thrift.TokenRange;
 import org.apache.cassandra.utils.KeyPair;
+import org.apache.cassandra.utils.BlobUtils;
+import org.apache.cassandra.utils.Pair;
 
+import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.CompositeConfiguration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 
@@ -37,16 +41,20 @@ import org.apache.whirr.service.Cluster;
 import org.apache.whirr.service.Cluster.Instance;
 import org.apache.whirr.service.ClusterSpec;
 import org.apache.whirr.service.ComputeServiceContextBuilder;
-import static org.apache.whirr.service.RunUrlBuilder.runUrls;
 import org.apache.whirr.service.Service;
 import org.apache.whirr.service.ServiceFactory;
 import org.apache.whirr.service.cassandra.CassandraService;
+import org.apache.whirr.service.cassandra.CassandraClusterActionHandler;
+import org.apache.whirr.service.jclouds.RunUrlStatement;
+
+import org.jclouds.blobstore.domain.BlobMetadata;
 
 import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.domain.NodeMetadata;
 import org.jclouds.compute.options.RunScriptOptions;
 import org.jclouds.domain.Credentials;
 import org.jclouds.io.Payload;
+import org.jclouds.scriptbuilder.domain.OsFamily;
 import org.jclouds.ssh.ExecResponse;
 import static org.jclouds.io.Payloads.newStringPayload;
 
@@ -80,6 +88,9 @@ public class CassandraServiceController
     private Cluster             cluster;
     private ComputeService      computeService;
     private Credentials         credentials;
+    private CompositeConfiguration config;
+    private BlobMetadata        tarball;
+    private List<InetAddress>   hosts;
     
     private CassandraServiceController()
     {
@@ -103,8 +114,8 @@ public class CassandraServiceController
 
     private void waitForClusterInitialization()
     {
-        for (Instance instance : cluster.getInstances())
-            waitForNodeInitialization(instance.getPublicAddress());
+        for (InetAddress host : hosts)
+            waitForNodeInitialization(host);
     }
     
     private void waitForNodeInitialization(InetAddress addr)
@@ -136,13 +147,13 @@ public class CassandraServiceController
     {
         LOG.info("Starting up cluster...");
 
-        CompositeConfiguration config = new CompositeConfiguration();
-        config.addConfiguration(new PropertiesConfiguration("whirr-default.properties"));
+        config = new CompositeConfiguration();
         if (System.getProperty("whirr.config") != null)
         {
             config.addConfiguration(
                 new PropertiesConfiguration(System.getProperty("whirr.config")));
         }
+        config.addConfiguration(new PropertiesConfiguration("whirr-default.properties"));
 
         clusterSpec = new ClusterSpec(config);
         if (clusterSpec.getPrivateKey() == null)
@@ -152,12 +163,25 @@ public class CassandraServiceController
             clusterSpec.setPrivateKey(pair.get("private"));
         }
 
+        // if a local tarball is available deploy it to the blobstore where it will be available to cassandra
+        if (System.getProperty("whirr.cassandra_tarball") != null)
+        {
+            Pair<BlobMetadata,URI> blob = BlobUtils.storeBlob(config, clusterSpec, System.getProperty("whirr.cassandra_tarball"));
+            tarball = blob.left;
+            config.setProperty(CassandraClusterActionHandler.BIN_TARBALL, blob.right.toURL().toString());
+            // TODO: parse the CassandraVersion property file instead
+            config.setProperty(CassandraClusterActionHandler.MAJOR_VERSION, "0.7");
+        }
+
         service = (CassandraService)new ServiceFactory().create(clusterSpec.getServiceName());
         cluster = service.launchCluster(clusterSpec);
         computeService = ComputeServiceContextBuilder.build(clusterSpec).getComputeService();
-        // TODO: expose creds on CassandraService without this mumbo-jumbo
-        NodeMetadata nm = computeService.getNodeMetadata(computeService.listNodes().iterator().next().getId());
-        credentials = new Credentials(nm.getCredentials().identity, clusterSpec.readPrivateKey());
+        hosts = new ArrayList<InetAddress>();
+        for (Instance instance : cluster.getInstances())
+        {
+            hosts.add(instance.getPublicAddress());
+            credentials = instance.getLoginCredentials();
+        }
 
         waitForClusterInitialization();
 
@@ -175,6 +199,8 @@ public class CassandraServiceController
             LOG.info("Shutting down cluster...");
             if (service != null)
                 service.destroyCluster(clusterSpec);
+            if (tarball != null)
+                BlobUtils.deleteBlob(config, clusterSpec, tarball);
             running = false;
         }
         catch (Exception e)
@@ -255,7 +281,7 @@ public class CassandraServiceController
                     intersection.retainAll(node.getPublicAddresses());
                     return !intersection.isEmpty();
                 }
-            }, newStringPayload(runUrls(clusterSpec.getRunUrlBase(), payload)),
+            }, newStringPayload(new RunUrlStatement(clusterSpec.getRunUrlBase(), payload).render(OsFamily.UNIX)),
             RunScriptOptions.Builder.overrideCredentialsWith(credentials));
         }
         catch (Exception e)
@@ -271,10 +297,6 @@ public class CassandraServiceController
 
     public List<InetAddress> getHosts()
     {
-        Set<Instance> instances = cluster.getInstances();
-        List<InetAddress> hosts = new ArrayList<InetAddress>(instances.size());
-        for (Instance instance : instances)
-            hosts.add(instance.getPublicAddress());
         return hosts;
     }
 

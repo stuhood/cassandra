@@ -340,8 +340,9 @@
       </jar>
     </target>
 
-    <!-- creates a release tarball -->
-    <target name="release" depends="clean,jar,javadoc,rat-init" description="Create a full Cassandra binary distribution including tar.gz">
+    <!-- creates release tarballs -->
+    <target name="artifacts" depends="jar,javadoc"
+            description="Create Cassandra release artifacts">
       <mkdir dir="${dist.dir}"/>
       <copy todir="${dist.dir}/lib">
         <fileset dir="${build.lib}"/>
@@ -391,14 +392,6 @@
           </not>
         </tarfileset>
       </tar>
-      <rat:report xmlns:rat="antlib:org.apache.rat.anttasks"
-                  reportFile="${build.dir}/${final.name}-bin.rat.txt">
-        <tarfileset>
-          <gzipresource>
-            <file file="${build.dir}/${final.name}-bin.tar.gz" />
-          </gzipresource>
-        </tarfileset>
-      </rat:report>
 
       <tar compression="gzip" longfile="gnu"
            destfile="${build.dir}/${final.name}-src.tar.gz">
@@ -425,6 +418,39 @@
           <exclude name="bin/*.bat" />
         </tarfileset>
       </tar>
+    </target>
+
+    <target name="release" depends="artifacts,rat-init"
+            description="Create and QC release artifacts">
+      <checksum file="${build.dir}/${final.name}-bin.tar.gz"
+                forceOverwrite="yes"
+                todir="${build.dir}"
+                fileext=".md5"
+                algorithm="MD5" />
+      <checksum file="${build.dir}/${final.name}-src.tar.gz"
+                forceOverwrite="yes"
+                todir="${build.dir}"
+                fileext=".md5"
+                algorithm="MD5" />
+      <checksum file="${build.dir}/${final.name}-bin.tar.gz"
+                forceOverwrite="yes"
+                todir="${build.dir}"
+                fileext=".sha"
+                algorithm="SHA" />
+      <checksum file="${build.dir}/${final.name}-src.tar.gz"
+                forceOverwrite="yes"
+                todir="${build.dir}"
+                fileext=".sha"
+                algorithm="SHA" />
+
+      <rat:report xmlns:rat="antlib:org.apache.rat.anttasks"
+                  reportFile="${build.dir}/${final.name}-bin.rat.txt">
+        <tarfileset>
+          <gzipresource>
+            <file file="${build.dir}/${final.name}-bin.tar.gz" />
+          </gzipresource>
+        </tarfileset>
+      </rat:report>
 
       <rat:report xmlns:rat="antlib:org.apache.rat.anttasks"
                   reportFile="${build.dir}/${final.name}-src.rat.txt">
@@ -473,6 +499,7 @@
     <attribute name="inputdir" />
     <attribute name="timeout" />
     <attribute name="forkmode" default="perTest"/>
+    <element name="optjvmargs" implicit="true" optional="true" />
     <sequential>
       <echo message="running @{suitename} tests"/>
       <mkdir dir="${build.test.dir}/cassandra"/>
@@ -484,9 +511,8 @@
         <jvmarg value="-Dstorage-config=${test.conf}"/>
         <jvmarg value="-Daccess.properties=${test.conf}/access.properties"/>
         <jvmarg value="-Dlog4j.configuration=log4j-junit.properties" />
-        <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
-        <jvmarg value="-Dwhirr.config=${whirr.config}"/>
         <jvmarg value="-ea"/>
+        <optjvmargs/>
         <classpath>
           <path refid="cassandra.classpath" />
           <pathelement location="${test.classes}"/>
@@ -505,15 +531,21 @@
   </macrodef>
 
   <target name="test" depends="build-test" description="Execute unit tests">
-    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="60000" />
+    <testmacro suitename="unit" inputdir="${test.unit.src}" timeout="60000">
+      <jvmarg value="-Dlegacy-sstable-root=${test.data}/legacy-sstables"/>
+    </testmacro>
   </target>
 
   <target name="long-test" depends="build-test" description="Execute functional tests">
     <testmacro suitename="long" inputdir="${test.long.src}" timeout="300000" />
   </target>
 
-  <target name="distributed-test" depends="build-distributed-test" description="Execute distributed tests: see ${test.distributed.src}/README.txt">
-    <testmacro suitename="distributed" inputdir="${test.distributed.src}" timeout="1200000" forkmode="once" />
+  <!-- Depends on artifacts so that we can push a tarball to remote nodes, and has its own build target for cloudy deps. -->
+  <target name="distributed-test" depends="build-distributed-test,artifacts" description="Execute distributed tests: see ${test.distributed.src}/README.txt">
+    <testmacro suitename="distributed" inputdir="${test.distributed.src}" timeout="1200000" forkmode="once">
+      <jvmarg value="-Dwhirr.config=${whirr.config}"/>
+      <jvmarg value="-Dwhirr.cassandra_tarball=${build.dir}/${final.name}-bin.tar.gz"/>
+    </testmacro>
   </target>
 
   <!-- instruments the classes to later create code coverage reports -->

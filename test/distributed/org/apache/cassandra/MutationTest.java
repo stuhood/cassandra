@@ -52,9 +52,10 @@ public class MutationTest extends TestBase
     public void testInsert() throws Exception
     {
         List<InetAddress> hosts = controller.getHosts();
+        final String keyspace = "TestInsert";
+        addKeyspace(keyspace, 3);
         Cassandra.Client client = controller.createClient(hosts.get(0));
-
-        client.set_keyspace(KEYSPACE);
+        client.set_keyspace(keyspace);
 
         ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
@@ -137,10 +138,12 @@ public class MutationTest extends TestBase
     @Test
     public void testQuorumInsertThenFailure() throws Exception
     {
+        final String keyspace = "TestQuorumInsertThenFailure";
         List<InetAddress> hosts = controller.getHosts();
+        addKeyspace(keyspace, hosts.size());
         Cassandra.Client client = controller.createClient(hosts.get(0));
 
-        client.set_keyspace(KEYSPACE);
+        client.set_keyspace(keyspace);
 
         ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
@@ -153,7 +156,7 @@ public class MutationTest extends TestBase
         {
             // our original client connection is dead: open a new one
             client = controller.createClient(hosts.get(1));
-            client.set_keyspace(KEYSPACE);
+            client.set_keyspace(keyspace);
 
             assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM));
             assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.QUORUM));

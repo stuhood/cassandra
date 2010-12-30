@@ -125,39 +125,4 @@ public class MovementTest extends TestBase
         // check that all keys still exist
         verifyBatch(client, rows);
     }
-
-    @Test
-    public void testDecomissionAndAdd() throws Exception
-    {
-        List<InetAddress> hosts = controller.getHosts();
-
-        // decommission one node
-        InetAddress failHost = hosts.get(hosts.size()-1);
-        controller.nodetool("decommission", failHost);
-
-        Map<ByteBuffer,List<ColumnOrSuperColumn>> rows;
-        Cassandra.Client client = controller.createClient(hosts.get(0));
-        Failure failure = controller.failHosts(failHost);
-        try
-        {
-            // wipe the failed node
-            controller.wipeHosts(failHost);
-
-            // insert columns to live nodes
-            client.set_keyspace(KEYSPACE);
-            rows = insertBatch(client);
-
-            Thread.sleep(100);
-        }
-        finally
-        {
-            // recommission the (decommissioned) node
-            failure.resolve();
-        }
-
-        Thread.sleep(1000 * 30);
-
-        // check that all keys still exist
-        verifyBatch(client, rows);
-    }
 }

@@ -40,15 +40,8 @@ import static junit.framework.Assert.assertNull;
 
 public abstract class TestBase
 {
-    protected static String KEYSPACE    = "KeyspaceTest1";
-
     protected static CassandraServiceController controller =
         CassandraServiceController.getInstance();
-
-    protected static void addKeyspace() throws Exception
-    {
-        addKeyspace(KEYSPACE, 3);
-    }
 
     protected static void addKeyspace(String name, int rf) throws Exception
     {
@@ -108,60 +101,10 @@ public abstract class TestBase
         }
     }
 
-    protected static void dropKeyspace() throws Exception
-    {
-        List<InetAddress> hosts = controller.getHosts();
-        Cassandra.Client client = controller.createClient(hosts.get(0));
-
-        client.system_drop_keyspace(KEYSPACE);
-
-        // poll, until KS dropped
-        for (InetAddress host : hosts)
-        {
-            try
-            {
-                client = controller.createClient(host);
-                poll:
-                while (true)
-                {
-                    List<KsDef> ksDefList = client.describe_keyspaces();
-                    for (KsDef ks : ksDefList)
-                    {
-                        if (ks.name.equals(KEYSPACE))
-                        {
-                            try
-                            {
-                                Thread.sleep(1000);
-                            }
-                            catch (InterruptedException e)
-                            {
-                                break poll;
-                            }
-                            continue poll;
-                        }
-                    }
-                    break;
-                }
-            }
-            catch (TException te)
-            {
-                continue;
-            }
-        }
-    }
-
     @BeforeClass
     public static void setUp() throws Exception
     {
         controller.ensureClusterRunning();
-
-        addKeyspace();
-    }
-
-    @AfterClass
-    public static void tearDown() throws Exception
-    {
-        dropKeyspace();
     }
 
     protected static String createTemporaryKey()

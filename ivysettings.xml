@@ -26,6 +26,8 @@
       <ibiblio name="cloudera"  root="https://repository.cloudera.com/content/repositories/releases/"   m2compatible="true"/>
       <ibiblio name="jclouds"   root="http://jclouds.googlecode.com/svn/repo"                           m2compatible="true"/>
       <ibiblio name="oauth"     root="http://oauth.googlecode.com/svn/code/maven"                       m2compatible="true"/>
+      <!-- private -->
+      <ibiblio name="twttr"     root="http://binaries.local.twitter.com/maven/"                         m2compatible="true"/>
     </chain>
   </resolvers>
 </ivysettings>
