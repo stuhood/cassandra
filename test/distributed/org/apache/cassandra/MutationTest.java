@@ -57,7 +57,6 @@ public class MutationTest extends TestBase
         insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ONE);
         insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.ONE);
 
-        Thread.sleep(100);
 
         assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
         assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.ONE));
@@ -80,7 +79,6 @@ public class MutationTest extends TestBase
         insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.QUORUM);
         insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.QUORUM);
 
-        Thread.sleep(100);
 
         Failure failure = controller.failHosts(hosts.get(0));
         try
