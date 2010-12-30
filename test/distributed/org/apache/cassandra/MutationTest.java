@@ -107,17 +107,18 @@ public class MutationTest extends TestBase
             assertEquals(endpoints.size() - 1, failures.size());
             InetAddress livenode = endpoints.get(endpoints.size() - 1);
 
+            Thread.sleep(10000);
             client = controller.createClient(coordinator);
             client.set_keyspace(KEYSPACE);
 
             assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
 
-            // try {
-            //     // write with all (failure)
-            //     // assert false
-            // } catch (UnavailableException e) {
-            //     //[this is good]
-            // }
+            try {
+                insert(client, key, "Standard1", "c3", "v3", 0, ConsistencyLevel.ALL);
+                assert false;
+            } catch (UnavailableException e) {
+                //[this is good]
+            }
         } finally {
             for (Failure failure : failures) {
                 failure.resolve();
