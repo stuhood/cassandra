@@ -27,11 +27,14 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ArrayList;
 
 import org.apache.cassandra.thrift.*;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.utils.WrappedRunnable;
 import  org.apache.thrift.TException;
+import org.apache.cassandra.client.*;
+import org.apache.cassandra.dht.RandomPartitioner;
 
 import org.apache.cassandra.CassandraServiceController.Failure;
 
@@ -64,6 +67,63 @@ public class MutationTest extends TestBase
         List<ColumnOrSuperColumn> coscs = get_slice(client, key, "Standard1", ConsistencyLevel.ONE);
         assertColumnEqual("c1", "v1", 0, coscs.get(0).column);
         assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
+    }
+
+    @Test
+    public void testWriteAllReadOne() throws Exception
+    {
+        List<InetAddress> hosts = controller.getHosts();
+        Cassandra.Client client = controller.createClient(hosts.get(0));
+
+        client.set_keyspace(KEYSPACE);
+
+        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+        insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ALL);
+        assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
+
+        RingCache ring = new RingCache(KEYSPACE, new RandomPartitioner(), hosts.get(0).getHostAddress(), 9160);
+        List<InetAddress> privateendpoints = ring.getEndpoint(key);
+        List<InetAddress> endpoints = new ArrayList<InetAddress>();
+        for (InetAddress endpoint : privateendpoints)
+        {
+            endpoints.add(controller.getPublicHost(endpoint));
+        }
+        List<Failure> failures = new ArrayList<Failure>();
+        InetAddress coordinator = null;
+
+        for (InetAddress host : hosts)
+        {
+            if (!endpoints.contains(host))
+            {
+                coordinator = host;
+                break;
+            }
+        }
+
+        try {
+            for(int i = 0; i < endpoints.size() - 1; i++) {
+                failures.add(controller.failHosts(endpoints.get(i)));
+            }
+            assertEquals(endpoints.size() - 1, failures.size());
+            InetAddress livenode = endpoints.get(endpoints.size() - 1);
+
+            client = controller.createClient(coordinator);
+            client.set_keyspace(KEYSPACE);
+
+            assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
+
+            // try {
+            //     // write with all (failure)
+            //     // assert false
+            // } catch (UnavailableException e) {
+            //     //[this is good]
+            // }
+        } finally {
+            for (Failure failure : failures) {
+                failure.resolve();
+                Thread.sleep(100);
+            }
+        }
     }
 
     @Test

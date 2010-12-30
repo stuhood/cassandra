@@ -294,4 +294,12 @@ public class CassandraServiceController
                 waitForNodeInitialization(host);
         }
     }
+
+    public InetAddress getPublicHost(InetAddress privateHost)
+    {
+        for (Instance instance : cluster.getInstances())
+            if (privateHost.equals(instance.getPrivateAddress()))
+                return instance.getPublicAddress();
+        throw new RuntimeException("No public host for private host " + privateHost);
+    }
 }
