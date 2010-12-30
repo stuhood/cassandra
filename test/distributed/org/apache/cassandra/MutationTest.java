@@ -67,6 +67,41 @@ public class MutationTest extends TestBase
         assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
     }
 
+    @Test
+    public void testQuorumInsertThenFailure() throws Exception
+    {
+        List<InetAddress> hosts = controller.getHosts();
+        Cassandra.Client client = controller.createClient(hosts.get(0));
+
+        client.set_keyspace(KEYSPACE);
+
+        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+
+        insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.QUORUM);
+        insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.QUORUM);
+
+        Thread.sleep(100);
+
+        Failure failure = controller.failHosts(hosts.get(0));
+        try
+        {
+            // our original client connection is dead: open a new one
+            client = controller.createClient(hosts.get(1));
+            client.set_keyspace(KEYSPACE);
+
+            assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM));
+            assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.QUORUM));
+
+            List<ColumnOrSuperColumn> coscs = get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM);
+            assertColumnEqual("c1", "v1", 0, coscs.get(0).column);
+            assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
+        }
+        finally
+        {
+            failure.resolve();
+        }
+    }
+
     protected void insert(Cassandra.Client client, ByteBuffer key, String cf, String name, String value, long timestamp, ConsistencyLevel cl)
         throws InvalidRequestException, UnavailableException, TimedOutException, TException
     {
@@ -108,38 +143,4 @@ public class MutationTest extends TestBase
         assertEquals(timestamp, col.timestamp);
     }
 
-    @Test
-    public void testQuorumInsertThenFailure() throws Exception
-    {
-        List<InetAddress> hosts = controller.getHosts();
-        Cassandra.Client client = controller.createClient(hosts.get(0));
-
-        client.set_keyspace(KEYSPACE);
-
-        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
-
-        insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.QUORUM);
-        insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.QUORUM);
-
-        Thread.sleep(100);
-
-        Failure failure = controller.failHosts(hosts.get(0));
-        try
-        {
-            // our original client connection is dead: open a new one
-            client = controller.createClient(hosts.get(1));
-            client.set_keyspace(KEYSPACE);
-
-            assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM));
-            assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.QUORUM));
-
-            List<ColumnOrSuperColumn> coscs = get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM);
-            assertColumnEqual("c1", "v1", 0, coscs.get(0).column);
-            assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
-        }
-        finally
-        {
-            failure.resolve();
-        }
-    }
 }
