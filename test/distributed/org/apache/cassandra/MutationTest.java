@@ -78,69 +78,82 @@ public class MutationTest extends TestBase
         List<InetAddress> hosts = controller.getHosts();
         Cassandra.Client client = controller.createClient(hosts.get(0));
 
-        client.set_keyspace(KEYSPACE);
+        final String keyspace = "TestWriteAllReadOne";
+        addKeyspace(keyspace, 3);
+        client.set_keyspace(keyspace);
 
         ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
         insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ALL);
         assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
 
-        List<InetAddress> endpoints = endpointsForKey(hosts.get(0), key);
-        InetAddress coordinator = nonEndpointForKey(hosts.get(0), key);
-        Failure failure = controller.failHosts(endpoints.subList(1, endpoints.size()-1));
+        List<InetAddress> endpoints = endpointsForKey(hosts.get(0), key, keyspace);
+        InetAddress coordinator = nonEndpointForKey(hosts.get(0), key, keyspace);
+        Failure failure = controller.failHosts(endpoints.subList(1, endpoints.size()));
 
-        Thread.sleep(10000); // let gossip catch up
+        Thread.sleep(30000); // let gossip catch up
 
         try {
             client = controller.createClient(coordinator);
-            client.set_keyspace(KEYSPACE);
+            client.set_keyspace(keyspace);
 
             assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
 
-            try {
-                insert(client, key, "Standard1", "c3", "v3", 0, ConsistencyLevel.ALL);
-                assert false;
-            } catch (UnavailableException e) {
-                // [this is good]
-            }
+            insert(client, key, "Standard1", "c3", "v3", 0, ConsistencyLevel.ALL);
+            assert false;
+        } catch (UnavailableException e) {
+            // [this is good]
         } finally {
             failure.resolve();
+            Thread.sleep(30000);
         }
     }
 
-    @Test
-    public void testQuorumInsertThenFailure() throws Exception
+    public ByteBuffer newKey()
     {
-        final String keyspace = "TestQuorumInsertThenFailure";
+        return ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+    }
+
+    @Test
+    public void testWriteQuorumReadQuorum() throws Exception
+    {
         List<InetAddress> hosts = controller.getHosts();
-        addKeyspace(keyspace, hosts.size());
         Cassandra.Client client = controller.createClient(hosts.get(0));
 
+        final String keyspace = "TestWriteQuorumReadQuorum";
+        addKeyspace(keyspace, 3);
         client.set_keyspace(keyspace);
 
-        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+        ByteBuffer key = newKey();
 
-        insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.QUORUM);
+        // with quorum-1 nodes up
+        List<InetAddress> endpoints = endpointsForKey(hosts.get(0), key, keyspace);
+        InetAddress coordinator = nonEndpointForKey(hosts.get(0), key, keyspace);
+        Failure failure = controller.failHosts(endpoints.subList(1, endpoints.size())); //kill all but one nodes
+
+        Thread.sleep(10000);
+        client = controller.createClient(coordinator);
+        client.set_keyspace(keyspace);
+        try {
+            insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.QUORUM);
+            assert false;
+        } catch (UnavailableException e) {
+            // [this is good]
+        } finally {
+            failure.resolve();
+            Thread.sleep(10000);
+        }
+
+        // with all nodes up
         insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.QUORUM);
 
-
-        Failure failure = controller.failHosts(hosts.get(0));
-        try
-        {
-            // our original client connection is dead: open a new one
-            client = controller.createClient(hosts.get(1));
-            client.set_keyspace(keyspace);
-
-            assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM));
-            assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.QUORUM));
-
-            List<ColumnOrSuperColumn> coscs = get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM);
-            assertColumnEqual("c1", "v1", 0, coscs.get(0).column);
-            assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
-        }
-        finally
-        {
+        failure = controller.failHosts(endpoints.get(0));
+        Thread.sleep(10000);
+        try {
+            getColumn(client, key, "Standard1", "c2", ConsistencyLevel.QUORUM);
+        } finally {
             failure.resolve();
+            Thread.sleep(10000);
         }
     }
 
@@ -185,10 +198,10 @@ public class MutationTest extends TestBase
         assertEquals(timestamp, col.timestamp);
     }
 
-    protected List<InetAddress> endpointsForKey(InetAddress seed, ByteBuffer key)
+    protected List<InetAddress> endpointsForKey(InetAddress seed, ByteBuffer key, String keyspace)
         throws IOException
     {
-        RingCache ring = new RingCache(KEYSPACE, new RandomPartitioner(), seed.getHostAddress(), 9160);
+        RingCache ring = new RingCache(keyspace, new RandomPartitioner(), seed.getHostAddress(), 9160);
         List<InetAddress> privateendpoints = ring.getEndpoint(key);
         List<InetAddress> endpoints = new ArrayList<InetAddress>();
         for (InetAddress endpoint : privateendpoints)
@@ -198,10 +211,10 @@ public class MutationTest extends TestBase
         return endpoints;
     }
 
-    protected InetAddress nonEndpointForKey(InetAddress seed, ByteBuffer key)
+    protected InetAddress nonEndpointForKey(InetAddress seed, ByteBuffer key, String keyspace)
         throws IOException
     {
-        List<InetAddress> endpoints = endpointsForKey(seed, key);
+        List<InetAddress> endpoints = endpointsForKey(seed, key, keyspace);
         for (InetAddress host : controller.getHosts())
         {
             if (!endpoints.contains(host))
