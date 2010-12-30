@@ -90,7 +90,8 @@ public class CassandraServiceController
     {
         TTransport transport    = new TSocket(
                                     addr.getHostAddress(),
-                                    CLIENT_PORT);
+                                    CLIENT_PORT,
+                                    20000);
         transport               = new TFramedTransport(transport);
         TProtocol  protocol     = new TBinaryProtocol(transport);
 

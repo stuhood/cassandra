@@ -54,42 +54,27 @@ public class MutationTest extends TestBase
 
         ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
-        Column col1 = new Column(
-            ByteBuffer.wrap("c1".getBytes()),
-            ByteBuffer.wrap("v1".getBytes()),
-            0
-            );
-        insert(client, key, "Standard1", col1, ConsistencyLevel.ONE);
-        Column col2 = new Column(
-            ByteBuffer.wrap("c2".getBytes()),
-            ByteBuffer.wrap("v2".getBytes()),
-            0
-            );
-        insert(client, key, "Standard1", col2, ConsistencyLevel.ONE);
+        insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ONE);
+        insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.ONE);
 
         Thread.sleep(100);
 
-        Column col3 = getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE);
-        assertColumnEqual("c1", "v1", 0, col3);
+        assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
+        assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.ONE));
 
-        Column col4 = getColumn(client, key, "Standard1", "c2", ConsistencyLevel.ONE);
-        assertColumnEqual("c2", "v2", 0, col4);
-
-        List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
-        List<ColumnOrSuperColumn> cocs2 = get_slice(client, key, "Standard1", ConsistencyLevel.ONE);
-        coscs.add((new ColumnOrSuperColumn()).setColumn(col3));
-        coscs.add((new ColumnOrSuperColumn()).setColumn(col2));
-        assertColumnEqual("c1", "v1", 0, coscs2.get(0));
-        assertColumnEqual("c1", "v1", 0, coscs2.get(1));
-        assertEquals(
-            coscs,
-            coscs2
-            );
+        List<ColumnOrSuperColumn> coscs = get_slice(client, key, "Standard1", ConsistencyLevel.ONE);
+        assertColumnEqual("c1", "v1", 0, coscs.get(0).column);
+        assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
     }
 
-    protected void insert(Cassandra.Client client, ByteBuffer key, String cf, Column col, ConsistencyLevel cl)
+    protected void insert(Cassandra.Client client, ByteBuffer key, String cf, String name, String value, long timestamp, ConsistencyLevel cl)
         throws InvalidRequestException, UnavailableException, TimedOutException, TException
     {
+        Column col = new Column(
+             ByteBuffer.wrap(name.getBytes()),
+             ByteBuffer.wrap(value.getBytes()),
+             timestamp
+             );
         client.insert(key, new ColumnParent(cf), col, cl);
     }
 
@@ -133,18 +118,8 @@ public class MutationTest extends TestBase
 
         ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
 
-        Column col1 = new Column(
-            ByteBuffer.wrap("c1".getBytes()),
-            ByteBuffer.wrap("v1".getBytes()),
-            0
-            );
-        insert(client, key, "Standard1", col1, ConsistencyLevel.QUORUM);
-        Column col2 = new Column(
-            ByteBuffer.wrap("c2".getBytes()),
-            ByteBuffer.wrap("v2".getBytes()),
-            0
-            );
-        insert(client, key, "Standard1", col2, ConsistencyLevel.QUORUM);
+        insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.QUORUM);
+        insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.QUORUM);
 
         Thread.sleep(100);
 
@@ -155,24 +130,12 @@ public class MutationTest extends TestBase
             client = controller.createClient(hosts.get(1));
             client.set_keyspace(KEYSPACE);
 
-            // verify get
-            Column col3 = getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE);
-            assertColumnEqual("c1", "v1", 0, col3);
-            Column col4 = getColumn(client, key, "Standard1", "c2", ConsistencyLevel.ONE);
-            assertColumnEqual("c2", "v2", 0, col4);
+            assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.QUORUM));
+            assertColumnEqual("c2", "v2", 0, getColumn(client, key, "Standard1", "c2", ConsistencyLevel.QUORUM));
 
-
-            // verify slice
-            List<ColumnOrSuperColumn> coscs = new LinkedList<ColumnOrSuperColumn>();
-            List<ColumnOrSuperColumn> coscs2 = get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM);
-            coscs.add((new ColumnOrSuperColumn()).setColumn(col3));
-            coscs.add((new ColumnOrSuperColumn()).setColumn(col4));
-            assertColumnEqual("c1", "v1", 0, cocs2.get(0));
-            assertColumnEqual("c2", "v2", 0, cocs2.get(1));
-            assertEquals(
-                coscs,
-                coscs2
-                );
+            List<ColumnOrSuperColumn> coscs = get_slice(client, key, "Standard1", ConsistencyLevel.QUORUM);
+            assertColumnEqual("c1", "v1", 0, coscs.get(0).column);
+            assertColumnEqual("c2", "v2", 0, coscs.get(1).column);
         }
         finally
         {
