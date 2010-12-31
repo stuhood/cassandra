@@ -57,7 +57,7 @@ public class MutationTest extends TestBase
         Cassandra.Client client = controller.createClient(hosts.get(0));
         client.set_keyspace(keyspace);
 
-        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+        ByteBuffer key = newKey();
 
         insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ONE);
         insert(client, key, "Standard1", "c2", "v2", 0, ConsistencyLevel.ONE);
@@ -82,7 +82,7 @@ public class MutationTest extends TestBase
         addKeyspace(keyspace, 3);
         client.set_keyspace(keyspace);
 
-        ByteBuffer key = ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+        ByteBuffer key = newKey();
 
         insert(client, key, "Standard1", "c1", "v1", 0, ConsistencyLevel.ALL);
         assertColumnEqual("c1", "v1", 0, getColumn(client, key, "Standard1", "c1", ConsistencyLevel.ONE));
@@ -107,11 +107,6 @@ public class MutationTest extends TestBase
             failure.resolve();
             Thread.sleep(30000);
         }
-    }
-
-    public ByteBuffer newKey()
-    {
-        return ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
     }
 
     @Test
@@ -224,6 +219,9 @@ public class MutationTest extends TestBase
         }
         return null;
     }
-    
 
+    protected ByteBuffer newKey()
+    {
+        return ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
+    }
 }
