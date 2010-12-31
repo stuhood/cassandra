@@ -91,7 +91,7 @@ public class MutationTest extends TestBase
         InetAddress coordinator = nonEndpointForKey(hosts.get(0), key, keyspace);
         Failure failure = controller.failHosts(endpoints.subList(1, endpoints.size()));
 
-        Thread.sleep(30000); // let gossip catch up
+        Thread.sleep(10000); // let gossip catch up
 
         try {
             client = controller.createClient(coordinator);
@@ -105,7 +105,7 @@ public class MutationTest extends TestBase
             // [this is good]
         } finally {
             failure.resolve();
-            Thread.sleep(30000);
+            Thread.sleep(10000);
         }
     }
 
