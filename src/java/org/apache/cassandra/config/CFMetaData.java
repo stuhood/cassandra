@@ -547,7 +547,7 @@ public final class CFMetaData
         return superColumnName == null ? comparator : subcolumnComparator;
     }
     
-    /** A list of types for 1) key, 2) name [3) subname]. */
+    /** A list of types for key, name, [subname,] value */
     public List<AbstractType> getTypes()
     {
         // TODO: persist this list
@@ -557,6 +557,7 @@ public final class CFMetaData
         types.add(comparator);
         if (cfType == ColumnFamilyType.Super)
             types.add(subcolumnComparator);
+        types.add(getDefaultValidator());
         return types;
     }
     

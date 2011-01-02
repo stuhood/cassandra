@@ -31,6 +31,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.thrift.SlicePredicate;
@@ -79,11 +80,11 @@ public class QueryFilter
         return superFilter.getSSTableColumnIterator(sstable, key);
     }
 
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, Cursor cursor)
     {
         if (path.superColumnName == null)
-            return filter.getSSTableColumnIterator(sstable, file);
-        return superFilter.getSSTableColumnIterator(sstable, file);
+            return filter.getSSTableColumnIterator(sstable, file, cursor);
+        return superFilter.getSSTableColumnIterator(sstable, file, cursor);
     }
 
     // TODO move gcBefore into a field

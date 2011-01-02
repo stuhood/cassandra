@@ -27,6 +27,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 
@@ -51,7 +52,7 @@ public interface IFilter
      * @param sstable
      * @param file An open file positioned at the head of the row to read
      */
-    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file);
+    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, Cursor cursor);
 
     /**
      * returns an iterator that returns columns from the given SSTable

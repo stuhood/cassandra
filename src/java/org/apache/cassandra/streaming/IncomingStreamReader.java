@@ -105,6 +105,7 @@ public class IncomingStreamReader
         ColumnFamilyStore cfs = Table.open(localFile.desc.ksname).getColumnFamilyStore(localFile.desc.cfname);
         SSTableWriter writer = SSTableWriter.create(localFile.getFilename(), remoteFile.estimatedKeys);
         CompactionController controller = new CompactionController(cfs, Collections.<SSTableReader>emptyList(), Integer.MAX_VALUE, true);
+        Cursor cursor = new Cursor(localFile.desc, cfs.metadata.getTypes());
 
         try
         {
@@ -114,11 +115,11 @@ public class IncomingStreamReader
             {
                 long length = section.right - section.left;
                 long bytesRead = 0;
-                while (bytesRead < length)
+                while (bytesRead < length || cursor.isAvailable())
                 {
                     in.reset(0);
 
-                    SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata, StorageService.getPartitioner(), localFile.desc, in, true);
+                    SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata, StorageService.getPartitioner(), localFile.desc, in, cursor, true);
                     AbstractCompactedRow row = controller.getCompactedRow(iter);
                     writer.append(row);
                     // row append does not update the max timestamp on its own

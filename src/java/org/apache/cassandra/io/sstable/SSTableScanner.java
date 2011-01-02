@@ -46,6 +46,8 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
     protected Iterator<IColumnIterator> iterator;
     private QueryFilter filter;
 
+    private final Cursor cursor;
+
     /**
      * @param sstable SSTable to scan.
      */
@@ -54,6 +56,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         try
         {
             this.file = sstable.openDataReader(bufferSize, skipCache);
+            this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
         }
         catch (IOException e)
         {
@@ -71,6 +74,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         try
         {
             this.file = sstable.openDataReader(bufferSize, false);
+            this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
         }
         catch (IOException e)
         {
@@ -98,6 +102,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
                 return;
             }
             file.seek(position);
+            cursor.clear();
             row = null;
         }
         catch (IOException e)
@@ -144,8 +149,11 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
 
     protected class KeyScanningIterator implements Iterator<IColumnIterator>
     {
+        boolean prepared = false;
         public boolean hasNext()
         {
+            if (prepared)
+                return true;
             try
             {
                 if (row != null)
@@ -153,7 +161,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
                     row.close();
                     row = null;
                 }
-                return !file.isEOF();
+                return prepared = (!file.isEOF() || cursor.isAvailable());
             }
             catch (IOException e)
             {
@@ -165,11 +173,12 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         {
             // hasNext will handle consuming the current row if it is still open
             if (!hasNext()) throw new NoSuchElementException();
+            prepared = false;
             try
             {
                 if (filter != null)
-                    return row = filter.getSSTableColumnIterator(sstable, file);
-                return row = SSTableIdentityIterator.create(sstable, file, false);
+                    return row = filter.getSSTableColumnIterator(sstable, file, cursor);
+                return row = SSTableIdentityIterator.create(sstable, file, cursor, false);
             }
             catch (IOException e)
             {

@@ -151,10 +151,10 @@ public class ColumnFamilyStoreTest extends CleanupHelper
         ColumnFamilyStore cfs = insertKey1Key2();
 
         IPartitioner p = StorageService.getPartitioner();
-        List<Row> result = cfs.getRangeSlice(ByteBufferUtil.EMPTY_BYTE_BUFFER,
+        List<Row> result = cfs.getRangeSlice(null,
                                              Util.range(p, "key1", "key2"),
                                              10,
-                                             new NamesQueryFilter(ByteBufferUtil.bytes("asdf")));
+                                             new NamesQueryFilter(ByteBufferUtil.bytes("Column1")));
         assertEquals(1, result.size());
         assert result.get(0).key.key.equals(ByteBufferUtil.bytes("key2"));
     }

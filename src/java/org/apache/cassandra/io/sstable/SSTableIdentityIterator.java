@@ -38,7 +38,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
     // Used by lazilyCompactedRow, so that we see the same things when deserializing the first and second time
     protected final int expireBefore;
 
-    SSTableIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, boolean fromRemote)
+    protected SSTableIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, boolean fromRemote)
     {
         this.cfm = cfm;
         this.partitioner = partitioner;
@@ -52,21 +52,21 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
      * from a remote node, and which might be missing components. This implementation
      * also forces deserialization of the data to check for corruption.
      */
-    public static SSTableIdentityIterator create(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, DataInput input, boolean deserializeRowHeader) throws IOException
+    public static SSTableIdentityIterator create(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, DataInput input, Cursor cursor, boolean deserializeRowHeader) throws IOException
     {
         if (desc.version.isRowIndexed)
             return new RowIndexedIdentityIterator(cfm, partitioner, desc, input, deserializeRowHeader, true);
-        throw new RuntimeException("FIXME");
+        return new ChunkedIdentityIterator(cfm, partitioner, desc, input, cursor, true);
     }
 
     /**
      * Open an SSTI for a local file which we "own", and which has all its components.
      */
-    public static SSTableIdentityIterator create(SSTableReader sstable, DataInput input, boolean deserializeRowHeader) throws IOException
+    public static SSTableIdentityIterator create(SSTableReader sstable, DataInput input, Cursor cursor, boolean deserializeRowHeader) throws IOException
     {
         if (sstable.descriptor.version.isRowIndexed)
             return new RowIndexedIdentityIterator(sstable.metadata, sstable.partitioner, sstable.descriptor, input, deserializeRowHeader, false);
-        throw new RuntimeException("FIXME");
+        return new ChunkedIdentityIterator(sstable.metadata, sstable.partitioner, sstable.descriptor, input, cursor, false);
     }
 
     public abstract String getPath();

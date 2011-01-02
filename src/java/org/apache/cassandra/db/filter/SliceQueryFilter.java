@@ -27,6 +27,7 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
+
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
@@ -34,8 +35,10 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
+import org.apache.cassandra.db.columniterator.ChunkedSliceIterator;
 import org.apache.cassandra.db.columniterator.RowIndexedSliceIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 
@@ -65,16 +68,14 @@ public class SliceQueryFilter implements IFilter
     {
         if (sstable.descriptor.version.isRowIndexed)
             return new RowIndexedSliceIterator(sstable, key, start, finish, reversed);
-        // TODO
-        throw new RuntimeException("Not implemented!");
+        return new ChunkedSliceIterator(sstable, key, start, finish, reversed);
     }
     
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, Cursor cursor)
     {
         if (sstable.descriptor.version.isRowIndexed)
             return new RowIndexedSliceIterator(sstable, file, start, finish, reversed);
-        // TODO: switch version
-        throw new RuntimeException("Not implemented!");
+        return new ChunkedSliceIterator(sstable, file, cursor, start, finish, reversed);
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

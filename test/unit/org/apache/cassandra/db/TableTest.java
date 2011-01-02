@@ -399,20 +399,7 @@ public class TableTest extends CleanupHelper
 
         // compact so we have a big row with more than the minimum index count
         if (cfStore.getSSTables().size() > 1)
-        {
             CompactionManager.instance.performMaximal(cfStore);
-        }
-        // verify that we do indeed have multiple index entries
-        SSTableReader sstable = cfStore.getSSTables().iterator().next();
-        long position = sstable.getPosition(key, SSTableReader.Operator.EQ);
-        RandomAccessReader file = sstable.openDataReader(false);
-        file.seek(position);
-        assert ByteBufferUtil.readWithShortLength(file).equals(key.key);
-        SSTableReader.readRowSize(file, sstable.descriptor);
-        IndexHelper.skipBloomFilter(file);
-        ArrayList<IndexHelper.IndexInfo> indexes = IndexHelper.deserializeIndex(file);
-        assert indexes.size() > 2;
-
         validateSliceLarge(cfStore);
     }
 

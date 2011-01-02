@@ -70,7 +70,7 @@ public class SSTableImportTest extends SchemaLoader
         IColumn expCol = cf.getColumn(ByteBufferUtil.bytes("colAC"));
         assert expCol.value().equals(hexToBytes("76616c4143"));
         assert expCol instanceof ExpiringColumn;
-        assert ((ExpiringColumn)expCol).getTimeToLive() == 42 && expCol.getLocalDeletionTime() == 2000000000;
+        assert expCol.getLocalDeletionTime() == 2000000000;
     }
 
     private String resourcePath(String name) throws URISyntaxException
@@ -99,7 +99,7 @@ public class SSTableImportTest extends SchemaLoader
         IColumn expCol = cf.getColumn(ByteBufferUtil.bytes("colAC"));
         assert expCol.value().equals(hexToBytes("76616c4143"));
         assert expCol instanceof ExpiringColumn;
-        assert ((ExpiringColumn)expCol).getTimeToLive() == 42 && expCol.getLocalDeletionTime() == 2000000000;
+        assert expCol.getLocalDeletionTime() == 2000000000;
     }
 
     @Test
@@ -112,9 +112,10 @@ public class SSTableImportTest extends SchemaLoader
         // Verify results
         SSTableReader reader = SSTableReader.open(Descriptor.fromFilename(tempSS.getPath()));
         QueryFilter qf = QueryFilter.getNamesFilter(Util.dk("rowA"), new QueryPath("Super4", null, null), ByteBufferUtil.bytes("superA"));
-        ColumnFamily cf = qf.getSSTableColumnIterator(reader).getColumnFamily();
-        IColumn superCol = cf.getColumn(ByteBufferUtil.bytes("superA"));
-        assert superCol != null;
+        IColumnIterator iter = qf.getSSTableColumnIterator(reader);
+        assert iter.hasNext();
+        IColumn superCol = iter.next();
+        assert superCol.name().equals(ByteBufferUtil.bytes("superA"));
         assert superCol.getSubColumns().size() > 0;
         IColumn subColumn = superCol.getSubColumn(ByteBufferUtil.bytes("636f6c4141"));
         assert subColumn.value().equals(hexToBytes("76616c75654141"));

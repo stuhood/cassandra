@@ -258,12 +258,6 @@ class RowIndexedIdentityIterator extends SSTableIdentityIterator
         inputWithTracker.reset(headerSize());
     }
 
-    public long rowSize()
-    {
-        assert dataSize >= 0;
-        return dataSize;
-    }
-    
     public void close() throws IOException
     {
         // creator is responsible for closing file when finished: but skip the content

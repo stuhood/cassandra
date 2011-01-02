@@ -18,9 +18,7 @@
 
 package org.apache.cassandra.db.compaction;
 
-import java.io.File;
-import java.io.IOError;
-import java.io.IOException;
+import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -494,6 +492,7 @@ public class CompactionManager implements CompactionManagerMBean
             SSTableReader newSstable = null;
             executor.beginCompaction(new ScrubInfo(dataFile, sstable));
             int goodRows = 0, badRows = 0, emptyRows = 0;
+            Cursor cursor = new Cursor(sstable.descriptor, cfs.metadata.getTypes());
 
             try
             {
@@ -526,7 +525,7 @@ public class CompactionManager implements CompactionManagerMBean
                     writer.mark();
                     try
                     {
-                        SSTableIdentityIterator row = SSTableIdentityIterator.create(sstable, dataFile, true);
+                        SSTableIdentityIterator row = SSTableIdentityIterator.create(sstable, dataFile, cursor, true);
                         if (row.getKey() == null)
                             throw new IOError(new IOException("Unable to read row key from data file"));
                         AbstractCompactedRow compactedRow = controller.getCompactedRow(row);
@@ -545,6 +544,7 @@ public class CompactionManager implements CompactionManagerMBean
                     catch (Throwable th)
                     {
                         writer.resetAndTruncate();
+                        cursor.clear();
                         if (currentIndexKey == null || nextRowPositionFromIndex < 0 || nextRowPositionFromIndex > dataFile.length())
                         {
                             logger.warn("Unable to read past the row at " + rowStart + " of " + dataFile.length() + ". Data after this position has been truncated, but is still available in the snapshot.", th);
