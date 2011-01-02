@@ -27,6 +27,9 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.avro.file.DataFileReader;
+import org.apache.cassandra.io.sstable.avro.Chunk;
+
 import org.apache.commons.collections.IteratorUtils;
 import org.apache.commons.collections.iterators.ReverseListIterator;
 import org.slf4j.Logger;
@@ -34,6 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
+import org.apache.cassandra.db.columniterator.ChunkedSliceIterator;
 import org.apache.cassandra.db.columniterator.RowIndexedSliceIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -65,8 +69,7 @@ public class SliceQueryFilter implements IFilter
     {
         if (sstable.descriptor.isRowIndexed)
             return new RowIndexedSliceIterator(sstable, key, start, finish, reversed);
-        // TODO
-        throw new RuntimeException("Not implemented!");
+        return new ChunkedSliceIterator(sstable, key, start, finish, reversed);
     }
     
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
@@ -75,6 +78,12 @@ public class SliceQueryFilter implements IFilter
             return new RowIndexedSliceIterator(sstable, file, start, finish, reversed);
         // TODO: switch version
         throw new RuntimeException("Not implemented!");
+    }
+
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DataFileReader<Chunk> reader)
+    {
+        assert !sstable.descriptor.isRowIndexed;
+        return new ChunkedSliceIterator(sstable, reader, start, finish, reversed);
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

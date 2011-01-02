@@ -30,6 +30,9 @@ import java.util.TreeSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.avro.file.DataFileReader;
+import org.apache.cassandra.io.sstable.avro.Chunk;
+
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.IdentityQueryFilter;
@@ -86,6 +89,13 @@ public class QueryFilter
         if (path.superColumnName == null)
             return filter.getSSTableColumnIterator(sstable, file);
         return superFilter.getSSTableColumnIterator(sstable, file);
+    }
+
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DataFileReader<Chunk> reader)
+    {
+        if (path.superColumnName == null)
+            return filter.getSSTableColumnIterator(sstable, reader);
+        return superFilter.getSSTableColumnIterator(sstable, reader);
     }
 
     public void collectCollatedColumns(final ColumnFamily returnCF, Iterator<IColumn> collatedColumns, final int gcBefore)

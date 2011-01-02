@@ -64,7 +64,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
     {
         if (desc.isRowIndexed)
             return new RowIndexedIdentityIterator(cfm, partitioner, desc, file, deserializeRowHeader, true);
-        throw new RuntimeException("FIXME");
+        return new ChunkedIdentityIterator(cfm, partitioner, desc, file, true);
     }
 
     /**
@@ -74,7 +74,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
     {
         if (sstable.descriptor.isRowIndexed)
             return new RowIndexedIdentityIterator(sstable.metadata, sstable.partitioner, sstable.descriptor, file, deserializeRowHeader, false);
-        throw new RuntimeException("FIXME");
+        return new ChunkedIdentityIterator(sstable.metadata, sstable.partitioner, sstable.descriptor, file, false);
     }
 
     public abstract String getPath();
