@@ -18,17 +18,16 @@
 
 package org.apache.cassandra;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
+import java.io.*;
 import java.net.InetAddress;
-import java.util.LinkedList;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.thrift.TException;
 
+import org.apache.cassandra.client.*;
+import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.thrift.*;
 
 import org.junit.AfterClass;
@@ -45,7 +44,7 @@ public abstract class TestBase
 
     protected static void addKeyspace(String name, int rf) throws Exception
     {
-        List<CfDef> cfDefList = new LinkedList<CfDef>();
+        List<CfDef> cfDefList = new ArrayList<CfDef>();
 
         CfDef standard1 = new CfDef(name, "Standard1");
         standard1.setComparator_type("BytesType");
@@ -110,5 +109,78 @@ public abstract class TestBase
     protected static String createTemporaryKey()
     {
         return String.format("test.key.%d", System.currentTimeMillis());
+    }
+
+    protected void insert(Cassandra.Client client, ByteBuffer key, String cf, String name, String value, long timestamp, ConsistencyLevel cl)
+        throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
+        Column col = new Column(
+             ByteBuffer.wrap(name.getBytes()),
+             ByteBuffer.wrap(value.getBytes()),
+             timestamp
+             );
+        client.insert(key, new ColumnParent(cf), col, cl);
+    }
+
+    protected Column getColumn(Cassandra.Client client, ByteBuffer key, String cf, String col, ConsistencyLevel cl)
+        throws InvalidRequestException, UnavailableException, TimedOutException, TException, NotFoundException
+    {
+        ColumnPath cpath = new ColumnPath(cf);
+        cpath.setColumn(col.getBytes());
+        return client.get(key, cpath, cl).column;
+    }
+
+    protected List<ColumnOrSuperColumn> get_slice(Cassandra.Client client, ByteBuffer key, String cf, ConsistencyLevel cl)
+      throws InvalidRequestException, UnavailableException, TimedOutException, TException
+    {
+        SlicePredicate sp = new SlicePredicate();
+        sp.setSlice_range(
+            new SliceRange(
+                ByteBuffer.wrap(new byte[0]),
+                ByteBuffer.wrap(new byte[0]),
+                false,
+                1000
+                )
+            );
+        return client.get_slice(key, new ColumnParent(cf), sp, cl);
+    }
+
+    protected void assertColumnEqual(String name, String value, long timestamp, Column col)
+    {
+        assertEquals(ByteBuffer.wrap(name.getBytes()), col.name);
+        assertEquals(ByteBuffer.wrap(value.getBytes()), col.value);
+        assertEquals(timestamp, col.timestamp);
+    }
+
+    protected List<InetAddress> endpointsForKey(InetAddress seed, ByteBuffer key, String keyspace)
+        throws IOException
+    {
+        RingCache ring = new RingCache(keyspace, new RandomPartitioner(), seed.getHostAddress(), 9160);
+        List<InetAddress> privateendpoints = ring.getEndpoint(key);
+        List<InetAddress> endpoints = new ArrayList<InetAddress>();
+        for (InetAddress endpoint : privateendpoints)
+        {
+            endpoints.add(controller.getPublicHost(endpoint));
+        }
+        return endpoints;
+    }
+
+    protected InetAddress nonEndpointForKey(InetAddress seed, ByteBuffer key, String keyspace)
+        throws IOException
+    {
+        List<InetAddress> endpoints = endpointsForKey(seed, key, keyspace);
+        for (InetAddress host : controller.getHosts())
+        {
+            if (!endpoints.contains(host))
+            {
+                return host;
+            }
+        }
+        return null;
+    }
+
+    protected ByteBuffer newKey()
+    {
+        return ByteBuffer.wrap(String.format("test.key.%d", System.currentTimeMillis()).getBytes());
     }
 }
