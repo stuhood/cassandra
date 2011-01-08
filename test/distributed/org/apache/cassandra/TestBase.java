@@ -22,6 +22,7 @@ import java.io.*;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.apache.thrift.TException;
@@ -42,62 +43,91 @@ public abstract class TestBase
     protected static CassandraServiceController controller =
         CassandraServiceController.getInstance();
 
-    protected static void addKeyspace(String name, int rf) throws Exception
+    static class KeyspaceCreation
     {
-        List<CfDef> cfDefList = new ArrayList<CfDef>();
-
-        CfDef standard1 = new CfDef(name, "Standard1");
-        standard1.setComparator_type("BytesType");
-        standard1.setKey_cache_size(10000);
-        standard1.setRow_cache_size(1000);
-        standard1.setRow_cache_save_period_in_seconds(0);
-        standard1.setKey_cache_save_period_in_seconds(3600);
-        standard1.setMemtable_flush_after_mins(59);
-        standard1.setMemtable_throughput_in_mb(255);
-        standard1.setMemtable_operations_in_millions(0.29);
-        cfDefList.add(standard1);
-
-        List<InetAddress> hosts = controller.getHosts();
-        Cassandra.Client client = controller.createClient(hosts.get(0));
-
-        client.system_add_keyspace(
-            new KsDef(
-                name,
-                "org.apache.cassandra.locator.SimpleStrategy",
-                rf,
-                cfDefList));
-
-        // poll, until KS added
-        for (InetAddress host : hosts)
+        private String name;
+        private int rf;
+        private CfDef cfdef;
+        public KeyspaceCreation(String name)
         {
-            try
-            {
-                client = controller.createClient(host);
-                poll:
-                while (true)
-                {
-                    List<KsDef> ksDefList = client.describe_keyspaces();
-                    for (KsDef ks : ksDefList)
-                    {
-                        if (ks.name.equals(name))
-                            break poll;
-                    }
+            this.name = name;
+            cfdef = new CfDef(name, "Standard1");
+            cfdef.setComparator_type("BytesType");
+            cfdef.setKey_cache_size(10000);
+            cfdef.setRow_cache_size(1000);
+            cfdef.setRow_cache_save_period_in_seconds(0);
+            cfdef.setKey_cache_save_period_in_seconds(3600);
+            cfdef.setMemtable_flush_after_mins(59);
+            cfdef.setMemtable_throughput_in_mb(255);
+            cfdef.setMemtable_operations_in_millions(0.29);
+        }
 
-                    try
+        public KeyspaceCreation validator(String validator)
+        {
+            cfdef.setDefault_validation_class(validator);
+            return this;
+        }
+
+        public KeyspaceCreation rf(int rf)
+        {
+            this.rf = rf;
+            return this;
+        }
+
+        public void create() throws Exception
+        {
+            List<InetAddress> hosts = controller.getHosts();
+            Cassandra.Client client = controller.createClient(hosts.get(0));
+
+            client.system_add_keyspace(
+                new KsDef(
+                    name,
+                    "org.apache.cassandra.locator.SimpleStrategy",
+                    rf,
+                    Arrays.asList(cfdef)));
+
+            // poll, until KS added
+            for (InetAddress host : hosts)
+            {
+                try
+                {
+                    client = controller.createClient(host);
+                    poll:
+                    while (true)
                     {
-                        Thread.sleep(1000);
-                    }
-                    catch (InterruptedException e)
-                    {
-                        break poll;
+                        List<KsDef> ksDefList = client.describe_keyspaces();
+                        for (KsDef ks : ksDefList)
+                        {
+                            if (ks.name.equals(name))
+                                break poll;
+                        }
+
+                        try
+                        {
+                            Thread.sleep(1000);
+                        }
+                        catch (InterruptedException e)
+                        {
+                            break poll;
+                        }
                     }
                 }
-            }
-            catch (TException te)
-            {
-                continue;
+                catch (TException te)
+                {
+                    continue;
+                }
             }
         }
+    }
+
+    protected static KeyspaceCreation keyspace(String name)
+    {
+        return new KeyspaceCreation(name);
+    }
+
+    protected static void addKeyspace(String name, int rf) throws Exception
+    {
+        keyspace(name).rf(rf).create();
     }
 
     @BeforeClass
