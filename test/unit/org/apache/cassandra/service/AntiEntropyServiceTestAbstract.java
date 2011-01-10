@@ -19,6 +19,7 @@
 package org.apache.cassandra.service;
 
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
@@ -154,7 +155,8 @@ public abstract class AntiEntropyServiceTestAbstract extends CleanupHelper
         validator.prepare(store);
 
         // add a row
-        validator.add(new PrecompactedRow(new DecoratedKey(mid, ByteBufferUtil.bytes("inconceivable!")), null));
+        ByteBuffer content = ByteBufferUtil.bytes("inconceivable!");
+        validator.add(new PrecompactedRow(new DecoratedKey(mid, content), content));
         validator.complete();
 
         // confirm that the tree was validated

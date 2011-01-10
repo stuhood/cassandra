@@ -43,14 +43,14 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
 
-public class CompactionIterator extends AbstractIterator<AbstractCompactedRow>
-implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
+public class CompactionIterator extends AbstractIterator<CompactedRow>
+implements CloseableIterator<CompactedRow>, CompactionInfo.Holder
 {
     private static Logger logger = LoggerFactory.getLogger(CompactionIterator.class);
 
     public static final int FILE_BUFFER_SIZE = 1024 * 1024;
 
-    private final MergeIterator<IColumnIterator, AbstractCompactedRow> source;
+    private final MergeIterator<IColumnIterator, CompactedRow> source;
     protected final CompactionType type;
     protected final CompactionController controller;
 
@@ -100,7 +100,7 @@ implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
     }
 
 
-    public AbstractCompactedRow computeNext()
+    public CompactedRow computeNext()
     {
         if (!source.hasNext())
             return endOfData();
@@ -158,7 +158,7 @@ implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
         return this.getCompactionInfo().toString();
     }
     
-    protected class Reducer extends MergeIterator.Reducer<IColumnIterator, AbstractCompactedRow>
+    protected class Reducer extends MergeIterator.Reducer<IColumnIterator, CompactedRow>
     {
         protected final List<SSTableIdentityIterator> rows = new ArrayList<SSTableIdentityIterator>();
 
@@ -167,23 +167,23 @@ implements CloseableIterator<AbstractCompactedRow>, CompactionInfo.Holder
             rows.add((SSTableIdentityIterator)current);
         }
 
-        protected AbstractCompactedRow getReduced()
+        protected CompactedRow getReduced()
         {
             assert rows.size() > 0;
 
             try
             {
-                AbstractCompactedRow compactedRow = controller.getCompactedRow(rows);
+                CompactedRow compactedRow = controller.getCompactedRow(rows);
                 if (compactedRow.isEmpty())
                 {
-                    controller.invalidateCachedRow(compactedRow.key);
+                    controller.invalidateCachedRow(compactedRow.getKey());
                     return null;
                 }
 
                 // If the raw is cached, we call removeDeleted on it to have/ coherent query returns. However it would look
                 // like some deleted columns lived longer than gc_grace + compaction. This can also free up big amount of
                 // memory on long running instances
-                controller.removeDeletedInCache(compactedRow.key);
+                controller.removeDeletedInCache(compactedRow.getKey());
 
                 return compactedRow;
             }

@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
@@ -42,6 +43,8 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.io.CompactedRow;
+import org.apache.cassandra.io.CompactionInfo.Holder;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
@@ -134,22 +137,28 @@ public class SSTableWriter extends SSTable implements Closeable
         dbuilder.addPotentialBoundary(dataPosition);
     }
 
-    public long append(AbstractCompactedRow row) throws IOException
+    public long append(CompactedRow row) throws IOException
     {
-        throw new RuntimeException("FIXME: not implemented"); /*
-        long currentPosition = beforeAppend(row.key);
-        ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
-        row.write(dataFile);
-        afterAppend(row.key, currentPosition, dataFile.getFilePointer() - currentPosition, row.columnCount());
-        return currentPosition;
-        */
+        return append(row.getKey(), row.getEmptyColumnFamily(), row);
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
     {
+        append(decoratedKey, cf, cf.getSortedColumns().iterator());
+    }
+
+    /**
+     * @param decoratedKey Key to append
+     * @param cf An empty CF representing the metadata for the row
+     * @param iter Iterator over columns in the row
+     * @return The offset of the written row
+     */
+    private long append(DecoratedKey decoratedKey, ColumnFamily cf, Iterator<IColumn> iter) throws IOException
+    {
         long startPosition = beforeAppend(decoratedKey);
-        int columnCount = appender.append(decoratedKey, cf, cf.getSortedColumns().iterator());
+        int columnCount = appender.append(decoratedKey, cf, iter);
         afterAppend(decoratedKey, startPosition, dataFile.sync() - startPosition, columnCount);
+        return startPosition;
     }
 
     /** TODO: Appending with this method will result in an inaccurate column count. */

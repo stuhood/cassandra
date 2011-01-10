@@ -176,25 +176,6 @@ class RowIndexedIdentityIterator extends SSTableIdentityIterator
         }
     }
 
-    public ColumnFamily getColumnFamilyWithColumns() throws IOException
-    {
-        file.seek(columnPosition - 4); // seek to before column count int
-        ColumnFamily cf = columnFamily.cloneMeShallow();
-        ColumnFamily.serializer().deserializeColumns(file, cf, false, fromRemote);
-        if (validateColumns)
-        {
-            try
-            {
-                cf.validateColumnFields();
-            }
-            catch (MarshalException e)
-            {
-                throw new IOException("Error validating row " + key, e);
-            }
-        }
-        return cf;
-    }
-
     public int getColumnCount()
     {
         return columnCount;

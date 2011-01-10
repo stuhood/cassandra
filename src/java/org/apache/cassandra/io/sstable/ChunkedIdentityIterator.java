@@ -34,6 +34,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.ChunkedSliceIterator;
 import org.apache.cassandra.io.sstable.avro.*;
+import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 
 class ChunkedIdentityIterator extends SSTableIdentityIterator
@@ -74,6 +75,11 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
     public SSTableReader getSSTable()
     {
         return sstable;
+    }
+
+    public String getPath()
+    {
+        return sstable.descriptor.filenameFor(Component.DATA);
     }
 
     public DecoratedKey getKey()
@@ -193,11 +199,6 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
     {
         // FIXME: we should modify the uncontested row optimization into an uncontested
         // span optimization: even juicier
-        throw new RuntimeException("FIXME: not implemented");
-    }
-
-    public ColumnFamily getColumnFamilyWithColumns() throws IOException
-    {
         throw new RuntimeException("FIXME: not implemented");
     }
 

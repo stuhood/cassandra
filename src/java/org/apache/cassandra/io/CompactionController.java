@@ -28,7 +28,6 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.EchoedRow;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -114,20 +113,7 @@ public class CompactionController
      */
     public AbstractCompactedRow getCompactedRow(List<SSTableIdentityIterator> rows)
     {
-        if (rows.size() == 1 && !needDeserialize())
-            return new EchoedRow(rows.get(0));
-
-        long rowSize = 0;
-        for (SSTableIdentityIterator row : rows)
-            rowSize += row.dataSize;
-
-        if (rowSize > DatabaseDescriptor.getInMemoryCompactionLimit())
-        {
-            logger.info(String.format("Compacting large row %s (%d bytes) incrementally",
-                                      ByteBufferUtil.bytesToHex(rows.get(0).getKey().key), rowSize));
-            return new LazilyCompactedRow(this, rows);
-        }
-        return new PrecompactedRow(this, rows);
+        return new CompactedRow(this, rows);
     }
 
     /** convenience method for single-sstable compactions */

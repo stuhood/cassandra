@@ -556,7 +556,8 @@ public class CompactionManager implements CompactionManagerMBean
 
         SSTableWriter writer;
         CompactionIterator ci = new CompactionIterator(type, sstables, controller); // retain a handle so we can call close()
-        Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
+        Iterator<CompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
+
         Map<DecoratedKey, Long> cachedKeys = new HashMap<DecoratedKey, Long>();
 
         executor.beginCompaction(ci);
@@ -574,7 +575,7 @@ public class CompactionManager implements CompactionManagerMBean
             writer = cfs.createCompactionWriter(expectedBloomFilterSize, compactionFileLocation, sstables);
             while (nni.hasNext())
             {
-                AbstractCompactedRow row = nni.next();
+                CompactedRow row = (CompactedRow)nni.next();
                 long position = writer.append(row);
                 totalkeysWritten++;
 
@@ -582,9 +583,9 @@ public class CompactionManager implements CompactionManagerMBean
                 {
                     for (SSTableReader sstable : sstables)
                     {
-                        if (sstable.getCachedPosition(row.key) != null)
+                        if (sstable.getCachedPosition(row.getKey()) != null)
                         {
-                            cachedKeys.put(row.key, position);
+                            cachedKeys.put(row.getKey(), position);
                             break;
                         }
                     }
@@ -692,7 +693,7 @@ public class CompactionManager implements CompactionManagerMBean
                     SSTableIdentityIterator row = SSTableIdentityIterator.create(sstable, dataFile, true);
                     if (row.getKey() == null)
                         throw new IOError(new IOException("Unable to read row key from data file"));
-                    AbstractCompactedRow compactedRow = controller.getCompactedRow(row);
+                    CompactedRow compactedRow = controller.getCompactedRow(row);
                     if (compactedRow.isEmpty())
                     {
                         emptyRows++;
@@ -896,13 +897,13 @@ public class CompactionManager implements CompactionManagerMBean
         executor.beginCompaction(ci);
         try
         {
-            Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
+            Iterator<CompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
 
             // validate the CF as we iterate over it
             validator.prepare(cfs);
             while (nni.hasNext())
             {
-                AbstractCompactedRow row = nni.next();
+                CompactedRow row = nni.next();
                 validator.add(row);
             }
             validator.complete();

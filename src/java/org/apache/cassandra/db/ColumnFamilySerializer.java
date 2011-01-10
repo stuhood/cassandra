@@ -101,12 +101,6 @@ public class ColumnFamilySerializer implements ICompactSerializer3<ColumnFamily>
         dos.writeLong(columnFamily.markedForDeleteAt.get());
     }
 
-    public int serializeWithIndexes(ColumnFamily columnFamily, DataOutput dos)
-    {
-        ColumnIndexer.serialize(columnFamily, dos);
-        return serializeForSSTable(columnFamily, dos);
-    }
-
     public ColumnFamily deserialize(DataInput dis) throws IOException
     {
         return deserialize(dis, false, false);

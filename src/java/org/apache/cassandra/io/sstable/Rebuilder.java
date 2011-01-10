@@ -162,7 +162,7 @@ public class Rebuilder implements CompactionInfo.Holder
         *     then removed quickly afterward (a key that we had lost but become responsible again could have stayed in cache). That key
         *     would be obsolete and so we must invalidate the cache).
         */
-        protected void updateCache(SSTableIdentityIterator row) throws IOException
+        protected void updateCache(SSTableIdentityIterator row, long startPosition) throws IOException
         {
             ColumnFamily cached = cfs.getRawCachedRow(row.getKey());
             if (cached == null)
@@ -170,17 +170,27 @@ public class Rebuilder implements CompactionInfo.Holder
             switch (type)
             {
                 case AES:
-                    if (row.getDataSize() > DatabaseDescriptor.getInMemoryCompactionLimit())
+                    // slurp the row data into a cf: if we pass the in memory compaction
+                    // limit, stop slurping and invalidate
+                    ColumnFamily cf = row.getColumnFamily().cloneMeShallow();
+                    long limit = startPosition + DatabaseDescriptor.getInMemoryCompactionLimit();
+                    while (row.hasNext())
                     {
-                        // We have a key in cache for a very big row, that is fishy. We don't fail here however because that would prevent the sstable
-                        // from being build (and there is no real point anyway), so we just invalidate the row for correction and log a warning.
-                        logger.warn("Found a cached row over the in memory compaction limit during post-streaming rebuilt; it is highly recommended to avoid huge row on column family with row cache enabled.");
+                        if (dfile.getFilePointer() > limit)
+                        {
+                            // We have a key in cache for a very big row, that is fishy. We don't fail here however because that would prevent the sstable
+                            // from being build (and there is no real point anyway), so we just invalidate the row for correction and log a warning.
+                            logger.warn("Found a cached row over the in memory compaction limit during post-streaming rebuilt; it is highly recommended to avoid huge row on column family with row cache enabled.");
+                            cf = null;
+                            break;
+                        }
+                        cf.addColumn(row.next());
+                    }
+                    row.reset();
+                    if (cf == null)
                         cfs.invalidateCachedRow(row.getKey());
-                    }
                     else
-                    {
-                        cfs.updateRowCache(row.getKey(), row.getColumnFamilyWithColumns());
-                    }
+                        cfs.updateRowCache(row.getKey(), cf);
                     break;
                 default:
                     cfs.invalidateCachedRow(row.getKey());
@@ -203,8 +213,9 @@ public class Rebuilder implements CompactionInfo.Holder
                                                                                   desc,
                                                                                   dfile,
                                                                                   true);
-                    updateCache(iter);
+                    updateCache(iter, rowPosition);
                     // close the iterator to position ourself at the end of the row
+                    // (which will make getDataSize and getColumnCount valid)
                     iter.close();
                     iwriter.afterAppend(iter.getKey(), rowPosition, iter.getDataSize(), iter.getColumnCount());
 
@@ -253,15 +264,14 @@ public class Rebuilder implements CompactionInfo.Holder
                 long dfileLength = dfile.length();
                 while (!dfile.isEOF())
                 {
+                    long rowPosition = dfile.getFilePointer();
                     SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata,
                                                                                   cfs.partitioner,
                                                                                   desc,
                                                                                   dfile,
                                                                                   true);
-                    updateCache(iter);
-
-                    AbstractCompactedRow row = controller.getCompactedRow(iter);
-
+                    updateCache(iter, rowPosition);
+                    CompactedRow row = controller.getCompactedRow(iter);
                     // append and close
                     writer.append(row);
                     iter.close();

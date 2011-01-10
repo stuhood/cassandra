@@ -42,7 +42,7 @@ import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.FailureDetector;
-import org.apache.cassandra.io.AbstractCompactedRow;
+import org.apache.cassandra.io.ICompactedRow;
 import org.apache.cassandra.io.ICompactSerializer;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
@@ -359,18 +359,18 @@ public class AntiEntropyService
          *
          * @param row The row.
          */
-        public void add(AbstractCompactedRow row)
+        public void add(ICompactedRow row)
         {
-            assert request.range.contains(row.key.token) : row.key.token + " is not contained in " + request.range;
-            assert lastKey == null || lastKey.compareTo(row.key) < 0
-                   : "row " + row.key + " received out of order wrt " + lastKey;
-            lastKey = row.key;
+            assert request.range.contains(row.getKey().token) : row.getKey().token + " is not contained in " + request.range;
+            assert lastKey == null || lastKey.compareTo(row.getKey()) < 0
+                   : "row " + row.getKey() + " received out of order wrt " + lastKey;
+            lastKey = row.getKey();
 
             if (range == null)
                 range = ranges.next();
 
             // generate new ranges as long as case 1 is true
-            while (!range.contains(row.key.token))
+            while (!range.contains(row.getKey().token))
             {
                 // add the empty hash, and move to the next range
                 range.addHash(EMPTY_ROW);
@@ -381,13 +381,13 @@ public class AntiEntropyService
             range.addHash(rowHash(row));
         }
 
-        private MerkleTree.RowHash rowHash(AbstractCompactedRow row)
+        private MerkleTree.RowHash rowHash(ICompactedRow row)
         {
             validated++;
             // MerkleTree uses XOR internally, so we want lots of output bits here
             MessageDigest digest = FBUtilities.newMessageDigest("SHA-256");
             row.update(digest);
-            return new MerkleTree.RowHash(row.key.token, digest.digest());
+            return new MerkleTree.RowHash(row.getKey().token, digest.digest());
         }
 
         /**

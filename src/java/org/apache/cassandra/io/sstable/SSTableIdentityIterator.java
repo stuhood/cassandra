@@ -89,9 +89,6 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
     /** Copy the row content byte-for-byte to the given output.  */
     public abstract void echoData(DataOutput out) throws IOException;
 
-    /** @return The entire row as a ColumnFamily: must be known to fit in memory. */
-    public abstract ColumnFamily getColumnFamilyWithColumns() throws IOException;
-
     /**
      * @return The width of the row: only valid after the iterator has been consumed.
      */

@@ -126,7 +126,7 @@ public class ChunkedSliceIterator implements IColumnIterator
         return key;
     }
 
-    public ColumnFamily getColumnFamily() throws IOException
+    public ColumnFamily getColumnFamily()
     {
         return cf;
     }
