@@ -131,12 +131,10 @@ public class IncomingStreamReader
                         switch (remoteFile.type)
                         {
                             case AES:
-                                if (row instanceof PrecompactedRow)
-                                {
-                                    // we do not purge so we should not get a null here
-                                    ColumnFamily cf = ((PrecompactedRow)row).getFullColumnFamily();
+                                ColumnFamily cf = row.getFullColumnFamily();
+                                if (cf != null)
+                                    // row was narrow enough to fit in memory
                                     cfs.updateRowCache(iter.getKey(), cf);
-                                }
                                 else
                                 {
                                     // We have a key in cache for a very big row, that is fishy. We don't fail here however because that would prevent the sstable
@@ -146,7 +144,6 @@ public class IncomingStreamReader
                                 }
                                 break;
                             default:
-                                cfs.invalidateCachedRow(iter.getKey());
                                 break;
                         }
                     }

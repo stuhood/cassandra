@@ -24,16 +24,14 @@ package org.apache.cassandra.db.compaction;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.security.MessageDigest;
+import java.util.Iterator;
 import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.ColumnIndexer;
-import org.apache.cassandra.db.CounterColumn;
-import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.MarshalException;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.HeapAllocator;
@@ -73,34 +71,21 @@ public class PrecompactedRow extends AbstractCompactedRow
     {
         super(rows.get(0).getKey());
         gcBefore = controller.gcBefore;
-        compactedCf = removeDeletedAndOldShards(rows.get(0).getKey(), controller, merge(rows));
+        compactedCf = removeDeletedAndOldShards(this.key, controller, merge(this.key, rows));
     }
 
-    private static ColumnFamily merge(List<SSTableIdentityIterator> rows)
+    private static ColumnFamily merge(DecoratedKey key, List<SSTableIdentityIterator> rows)
     {
-        ColumnFamily cf = null;
+        ColumnFamily cf = rows.get(0).getColumnFamily().cloneMeShallow();
         for (SSTableIdentityIterator row : rows)
-        {
-            ColumnFamily thisCF;
-            try
-            {
-                thisCF = row.getColumnFamilyWithColumns();
-            }
-            catch (IOException e)
-            {
-                logger.error("Skipping row " + row.getKey() + " in " + row.getPath(), e);
-                continue;
-            }
-            if (cf == null)
-            {
-                cf = thisCF;
-            }
-            else
-            {
-                cf.addAll(thisCF, HeapAllocator.instance);
-            }
-        }
+            while (row.hasNext())
+                cf.addColumn(row.next(), HeapAllocator.instance);
         return cf;
+    }
+
+    public Iterator<IColumn> iterator()
+    {
+        return compactedCf.getSortedColumns().iterator();
     }
 
     public long write(DataOutput out) throws IOException
@@ -149,14 +134,18 @@ public class PrecompactedRow extends AbstractCompactedRow
         return compactedCf.maxTimestamp();
     }
 
-    /**
-     * @return the full column family represented by this compacted row.
-     *
-     * We do not provide this method for other AbstractCompactedRow, because this fits the whole row into
-     * memory and don't make sense for those other implementations.
-     */
-    public ColumnFamily getFullColumnFamily()  throws IOException
+    public ColumnFamily getMetadata()
     {
         return compactedCf;
+    }
+
+    public ColumnFamily getFullColumnFamily()
+    {
+        return compactedCf;
+    }
+
+    public int getEstimatedColumnCount()
+    {
+        return columnCount();
     }
 }

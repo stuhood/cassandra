@@ -214,29 +214,19 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
             out.write(inputWithTracker.readByte());
     }
 
-    public ColumnFamily getColumnFamilyWithColumns() throws IOException
-    {
-        assert inputWithTracker.getBytesRead() == headerSize();
-        ColumnFamily cf = columnFamily.cloneMeShallow();
-        // since we already read column count, just pass that value and continue deserialization
-        ColumnFamily.serializer().deserializeColumns(inputWithTracker, cf, columnCount, fromRemote);
-        if (validateColumns)
-        {
-            try
-            {
-                cf.validateColumnFields();
-            }
-            catch (MarshalException e)
-            {
-                throw new IOException("Error validating row " + key, e);
-            }
-        }
-        return cf;
-    }
 
     private long headerSize()
     {
         return columnPosition - dataStart;
+    }
+
+    /**
+     * @return True if the full content of the row could be buffered into a buffer
+     * of the given size: valid before the iterator has been consumed.
+     */
+    public boolean isBufferable(long limitBytes)
+    {
+        return dataSize <= limitBytes;
     }
 
     public int compareTo(SSTableIdentityIterator o)

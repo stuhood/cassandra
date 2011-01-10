@@ -25,14 +25,23 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.security.MessageDigest;
 
+import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.util.IIterableColumns;
 
 /**
  * a CompactedRow is an object that takes a bunch of rows (keys + columnfamilies)
  * and can write a compacted version of those rows to an output stream.  It does
  * NOT necessarily require creating a merged CF object in memory.
+ *
+ * The two paths for consuming a CompactedRow are:
+ * 1) CompactedRow.write()
+ *    Appends a serialized blob of data to an output (possibly by performing 2 read passes)
+ * 2) CompactedRow.iterator()
+ *    Allows iteration over the merged content of the row
  */
-public abstract class AbstractCompactedRow
+public abstract class AbstractCompactedRow implements IIterableColumns
 {
     public final DecoratedKey key;
 
@@ -40,6 +49,21 @@ public abstract class AbstractCompactedRow
     {
         this.key = key;
     }
+
+    @Override
+    public AbstractType getComparator()
+    {
+        return getMetadata().getComparator();
+    }
+
+    /** @return The column family for this row, without any column content. */
+    public abstract ColumnFamily getMetadata();
+
+    /**
+     * @return The full column family for this row, or null if it is too large to
+     * fit in memory.
+     */
+    public abstract ColumnFamily getFullColumnFamily();
 
     /**
      * write the row (size + column index + filter + column data, but NOT row key) to @param out

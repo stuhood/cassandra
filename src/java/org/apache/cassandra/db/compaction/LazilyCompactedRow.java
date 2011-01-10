@@ -39,6 +39,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.IIterableColumns;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.MergeIterator;
 
 /**
@@ -52,20 +53,27 @@ import org.apache.cassandra.utils.MergeIterator;
  * rows to write the merged columns or update the hash, again with at most one column
  * from each row deserialized at a time.
  */
-public class LazilyCompactedRow extends AbstractCompactedRow implements IIterableColumns
+public class LazilyCompactedRow extends AbstractCompactedRow
 {
     private static Logger logger = LoggerFactory.getLogger(LazilyCompactedRow.class);
 
     private final List<SSTableIdentityIterator> rows;
     private final CompactionController controller;
     private final boolean shouldPurge;
-    private final DataOutputBuffer headerBuffer;
-    private ColumnFamily emptyColumnFamily;
+    private final ColumnFamily emptyColumnFamily;
+
+    // remaining fields lazily populated by a write/update call
+    private DataOutputBuffer headerBuffer = null;
     private Reducer reducer;
     private int columnCount;
     private long maxTimestamp;
     private long columnSerializedSize;
 
+    // a cached iterator for the next call to iterator(), and a boolean indicating whether
+    // it might have been consumed, and thus need to be reset
+    private Iterator<IColumn> iterator = null;
+    private boolean iterNeedsReset = false;
+ 
     public LazilyCompactedRow(CompactionController controller, List<SSTableIdentityIterator> rows)
     {
         super(rows.get(0).getKey());
@@ -73,16 +81,20 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         this.controller = controller;
         this.shouldPurge = controller.shouldPurge(key);
 
+        ColumnFamily tmp = null;
         for (IColumnIterator row : rows)
         {
-            ColumnFamily cf = row.getColumnFamily();
-
-            if (emptyColumnFamily == null)
-                emptyColumnFamily = cf;
+            if (tmp == null)
+                tmp = row.getColumnFamily();
             else
-                emptyColumnFamily.delete(cf);
+                tmp.delete(row.getColumnFamily());
         }
+        emptyColumnFamily = tmp;
+    }
 
+    /** The first iteration pass, used to build the index / determine the size of the row. */
+    private void performIndexing() throws IOException
+    {
         // initialize row header so isEmpty can be called
         headerBuffer = new DataOutputBuffer();
         ColumnIndexer.serialize(this, headerBuffer);
@@ -96,10 +108,16 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
 
     public long write(DataOutput out) throws IOException
     {
+        // perform the first pass to build the index and calculate size
+        performIndexing();
+
+        // and the second pass
         DataOutputBuffer clockOut = new DataOutputBuffer();
         ColumnFamily.serializer().serializeCFInfo(emptyColumnFamily, clockOut);
 
         long dataSize = headerBuffer.getLength() + clockOut.getLength() + columnSerializedSize;
+        logger.info(String.format("Compacting large row %s (%d bytes) incrementally",
+                                  key, dataSize));
         if (logger.isDebugEnabled())
             logger.debug(String.format("header / clock / column sizes are %s / %s / %s",
                          headerBuffer.getLength(), clockOut.getLength(), columnSerializedSize));
@@ -130,6 +148,9 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
 
         try
         {
+            // perform the first pass to build the index and calculate size
+            performIndexing();
+
             ColumnFamily.serializer().serializeCFInfo(emptyColumnFamily, out);
             out.writeInt(columnCount);
             digest.update(out.getData(), 0, out.getLength());
@@ -148,8 +169,9 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
 
     public boolean isEmpty()
     {
+        maybeCreateIterator();
         boolean cfIrrelevant = ColumnFamilyStore.removeDeletedCF(emptyColumnFamily, controller.gcBefore) == null;
-        return cfIrrelevant && columnCount == 0;
+        return cfIrrelevant && !iterator.hasNext();
     }
 
     public int getEstimatedColumnCount()
@@ -160,28 +182,50 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         return n;
     }
 
-    public AbstractType getComparator()
-    {
-        return emptyColumnFamily.getComparator();
-    }
-
     public Iterator<IColumn> iterator()
     {
-        for (SSTableIdentityIterator row : rows)
-            row.reset();
+        if (iterNeedsReset)
+        {
+            for (SSTableIdentityIterator row : rows)
+                row.reset();
+            iterator = null;
+        }
+        maybeCreateIterator();
+        // we're exposing this iterator: assume that some content will be consumed
+        iterNeedsReset = true;
+        return iterator;
+    }
+
+    private void maybeCreateIterator()
+    {
+        if (iterator != null)
+            return;
         reducer = new Reducer();
         Iterator<IColumn> iter = MergeIterator.get(rows, getComparator().columnComparator, reducer);
-        return Iterators.filter(iter, Predicates.notNull());
+        iterator = Iterators.filter(iter, Predicates.notNull());
     }
 
     public int columnCount()
     {
+        assert headerBuffer != null;
         return columnCount;
     }
 
     public long maxTimestamp()
     {
+        assert headerBuffer != null;
         return maxTimestamp;
+    }
+
+    public ColumnFamily getMetadata()
+    {
+        return emptyColumnFamily;
+    }
+
+    public ColumnFamily getFullColumnFamily()
+    {
+        // does not fit in memory
+        return null;
     }
 
     private class Reducer extends MergeIterator.Reducer<IColumn, IColumn>

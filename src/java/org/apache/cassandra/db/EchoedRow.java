@@ -23,8 +23,10 @@ package org.apache.cassandra.db;
 
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.Iterator;
 import java.security.MessageDigest;
 
+import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
 import org.apache.cassandra.db.compaction.CompactionController;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
@@ -45,6 +47,11 @@ public class EchoedRow extends AbstractCompactedRow
         this.gcBefore = controller.gcBefore;
         // Reset SSTableIdentityIterator because we have not guarantee the filePointer hasn't moved since the Iterator was built
         row.reset();
+    }
+
+    public Iterator<IColumn> iterator()
+    {
+        return getFullColumnFamily().getSortedColumns().iterator();
     }
 
     public long write(DataOutput out) throws IOException
@@ -74,5 +81,20 @@ public class EchoedRow extends AbstractCompactedRow
     public long maxTimestamp()
     {
         throw new UnsupportedOperationException();
+    }
+
+    public ColumnFamily getMetadata()
+    {
+        return row.getColumnFamily();
+    }
+
+    public ColumnFamily getFullColumnFamily()
+    {
+        throw new UnsupportedOperationException("FIXME: this is ambiguous: should not choose the EchoedRow optimization in cases where we wanted to deserialize");
+    }
+
+    public int getEstimatedColumnCount()
+    {
+        return columnCount();
     }
 }
