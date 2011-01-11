@@ -791,6 +791,11 @@ public class DefsTest extends CleanupHelper
         upCf.column_metadata.add(index);
         new UpdateColumnFamily(upCf).apply();
 
+        // block for the index to be created
+        ColumnFamilyStore cfs = Table.open(ks).getColumnFamilyStore(cf);
+        while (!cfs.getSecondaryIndex(ByteBufferUtil.bytes(indexname)).isBuilt())
+            Thread.sleep(100);
+
         // check that data that should be indexed, is
         Table table = Table.open(ks);
         IndexExpression expr = new IndexExpression(Util.bytes(indexname), IndexOperator.EQ, Util.bytes("1970"));
