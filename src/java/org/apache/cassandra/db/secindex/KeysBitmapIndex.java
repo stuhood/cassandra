@@ -147,7 +147,7 @@ public class KeysBitmapIndex extends SecondaryIndex
         // collect indexes of type KeysBitmap
         Set<ColumnDefinition> keysb = new HashSet<ColumnDefinition>();
         for (ColumnDefinition def : defs)
-            if (def.getIndexType() == IndexType.KEYS_BITMAP)
+            if (def.getIndexType() == IndexType.BITMAP)
                 keysb.add(def);
         if (keysb.isEmpty())
             // nothing to sync

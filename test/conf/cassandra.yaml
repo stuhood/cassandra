@@ -85,11 +85,11 @@ keyspaces:
           column_metadata:
             - name: birthdate
               validator_class: LongType
-              index_type: KEYS_BITMAP
+              index_type: BITMAP
 
             - name: state
               validator_class: UTF8Type
-              index_type: KEYS_BITMAP
+              index_type: BITMAP
 
     - name: Keyspace2
       replica_placement_strategy: org.apache.cassandra.locator.SimpleStrategy

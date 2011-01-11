@@ -52,8 +52,10 @@ public class CleanupTest extends CleanupHelper
 {
     public static final int LOOPS = 200;
     public static final String TABLE1 = "Keyspace1";
-    public static final String CF1 = "Indexed1";
+    public static final String CF1 = "Indexed1"; //Keys
     public static final String CF2 = "Standard1";
+    public static final String CF3 = "Indexed3"; //Bitmap
+
     public static final ByteBuffer COLUMN = ByteBuffer.wrap("birthdate".getBytes());
     public static final ByteBuffer VALUE = ByteBuffer.allocate(8);
     static
@@ -85,11 +87,35 @@ public class CleanupTest extends CleanupHelper
         assertEquals(LOOPS, rows.size());
     }
 
-    @Test
-    public void testCleanupWithIndexes() throws IOException, ExecutionException, InterruptedException
+    
+    @Test 
+    public void testCleanupWithKeysIndex() throws IOException, ExecutionException, InterruptedException
+    {
+        testCleanupWithIndexes(CF1);
+    }
+    
+    @Test 
+    public void testCleanupWithBitmapIndex() throws IOException, ExecutionException, InterruptedException
+    {
+        testCleanupWithIndexes(CF3);
+    }
+     
+    @Test 
+    public void testDeleteWithKeysIndex() throws IOException, ExecutionException, InterruptedException
+    {
+        testDeleteWithIndexes(CF1);
+    }
+    
+    @Test 
+    public void testDeleteWithBitmapIndex() throws IOException, ExecutionException, InterruptedException
+    {
+        testDeleteWithIndexes(CF3);
+    }
+    
+    public void testCleanupWithIndexes(String CF) throws IOException, ExecutionException, InterruptedException
     {
         Table table = Table.open(TABLE1);
-        ColumnFamilyStore cfs = table.getColumnFamilyStore(CF1);
+        ColumnFamilyStore cfs = table.getColumnFamilyStore(CF);
         assertEquals(cfs.getIndexedColumns().iterator().next(), COLUMN);
 
         List<Row> rows;
@@ -107,7 +133,7 @@ public class CleanupTest extends CleanupHelper
         IFilter filter = new IdentityQueryFilter();
         IPartitioner p = StorageService.getPartitioner();
         Range range = new Range(p.getMinimumToken(), p.getMinimumToken());
-        rows = table.getColumnFamilyStore(CF1).scan(clause, range, filter);
+        rows = table.getColumnFamilyStore(CF).scan(clause, range, filter);
         assertEquals(LOOPS, rows.size());
 
         // nuke our token so cleanup will remove everything
@@ -129,6 +155,69 @@ public class CleanupTest extends CleanupHelper
         assertEquals(0, rows.size());
     }
 
+    
+    public void testDeleteWithIndexes(String CF) throws IOException, ExecutionException, InterruptedException
+    {
+        Table table = Table.open(TABLE1);
+        ColumnFamilyStore cfs = table.getColumnFamilyStore(CF);
+        assertEquals(cfs.getIndexedColumns().iterator().next(), COLUMN);
+
+        List<Row> rows;
+
+        // insert data and verify we get it back w/ range query
+        fillCF(cfs, LOOPS);
+        rows = cfs.getRangeSlice(null, Util.range("", ""), 1000, new IdentityQueryFilter());
+        assertEquals(LOOPS, rows.size());
+
+        assertTrue(cfs.getSecondaryIndex(COLUMN).isBuilt());
+
+        // verify we get it back w/ index query too
+        IndexExpression expr = new IndexExpression(COLUMN, IndexOperator.EQ, VALUE);
+        IndexClause clause = new IndexClause(Arrays.asList(expr), FBUtilities.EMPTY_BYTE_BUFFER, Integer.MAX_VALUE);
+        IFilter filter = new IdentityQueryFilter();
+        IPartitioner p = StorageService.getPartitioner();
+        Range range = new Range(p.getMinimumToken(), p.getMinimumToken());
+        rows = table.getColumnFamilyStore(CF).scan(clause, range, filter);
+        assertEquals(LOOPS, rows.size());
+
+        // delete a row.
+        RowMutation rm = new RowMutation(TABLE1, ByteBuffer.wrap("0".getBytes()));
+        rm.delete(new QueryPath(cfs.getColumnFamilyName(), null, COLUMN), System.currentTimeMillis());
+        rm.applyUnsafe();
+        
+        
+        // row  should be gone
+        rows = cfs.getRangeSlice(null, Util.range("", ""), 1000, new IdentityQueryFilter());
+        assertEquals(LOOPS, rows.size());
+
+        boolean hasTombstone = false;
+        for(Row row : rows)
+        {
+            if(row.cf == null)
+            {
+                assert !hasTombstone;
+                hasTombstone = true;
+            }
+        }
+        
+      
+        // 2ary indexes should result in no results, too (although tombstones won't be gone until compacted)
+        rows = cfs.scan(clause, range, filter);
+        assertEquals(LOOPS-1, rows.size());
+        
+        hasTombstone = false;
+        for(Row row : rows)
+        {
+            if(row.cf == null)
+            {
+                assert !hasTombstone;
+                hasTombstone = true;
+            }
+        }
+    }
+    
+    
+    
     protected void fillCF(ColumnFamilyStore cfs, int rowsPerSSTable) throws ExecutionException, InterruptedException, IOException
     {
         CompactionManager.instance.disableAutoCompaction();

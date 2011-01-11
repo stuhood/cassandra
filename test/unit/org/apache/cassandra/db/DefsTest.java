@@ -759,7 +759,7 @@ public class DefsTest extends CleanupHelper
     @Test
     public void testUpdateColumnFamilyKeysBitmapIndex() throws Exception
     {
-        testUpdateColumnFamilyIndex("KeysBitmapIndexedCf", org.apache.cassandra.avro.IndexType.KEYS_BITMAP);
+        testUpdateColumnFamilyIndex("KeysBitmapIndexedCf", org.apache.cassandra.avro.IndexType.BITMAP);
     }
     */
 

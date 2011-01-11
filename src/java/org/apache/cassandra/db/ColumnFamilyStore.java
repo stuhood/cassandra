@@ -1730,7 +1730,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public boolean hasBitmapIndexes()
     {
         for (ColumnDefinition cdef : metadata.getColumn_metadata().values())
-            if (cdef.getIndexType() == IndexType.KEYS_BITMAP)
+            if (cdef.getIndexType() == IndexType.BITMAP)
                 return true;
         return false;
     }

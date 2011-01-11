@@ -49,7 +49,7 @@ public abstract class SecondaryIndex
             idx = new KeysIndex(info, cfs);
         else
         {
-            assert info.getIndexType() == IndexType.KEYS_BITMAP;
+            assert info.getIndexType() == IndexType.BITMAP;
             idx = new KeysBitmapIndex(info, cfs);
         }
         idx.initialize();

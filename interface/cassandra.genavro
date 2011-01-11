@@ -120,7 +120,7 @@ protocol Cassandra {
     @aliases(["org.apache.cassandra.config.avro.IndexType"])
     enum IndexType {
         KEYS,
-        KEYS_BITMAP
+        BITMAP
     }
 
     /* describes a column in a column family. */

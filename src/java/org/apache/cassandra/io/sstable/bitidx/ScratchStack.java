@@ -175,9 +175,9 @@ class ScratchStack
         finally
         {
             ReusableBinSegment.poolReturn(segment);
-            writer.close();
+            FileUtils.closeQuietly(writer);
             for (DataFileReader<BinSegment> reader : readers)
-                reader.close();
+                FileUtils.closeQuietly(reader);
         }
         // add the newly written component to the stack
         stack.push(output);

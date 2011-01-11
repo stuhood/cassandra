@@ -313,7 +313,7 @@ struct AuthenticationRequest {
 
 enum IndexType {
     KEYS,
-    KEYS_BITMAP,
+    BITMAP,
 }
 
 /* describes a column in a column family. */

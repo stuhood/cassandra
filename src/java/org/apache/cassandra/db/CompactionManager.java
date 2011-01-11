@@ -419,7 +419,7 @@ public class CompactionManager implements CompactionManagerMBean
                         while (row.hasNext())
                         {
                             IColumn column = row.next();
-                            if (indexedColumns.contains(column.name()))
+                            if (indexedColumns.contains(column.name()) && !needsObservation)
                                 Table.cleanupIndexEntry(cfs, row.getKey().key, column);
                         }
                     }

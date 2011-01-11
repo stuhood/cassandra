@@ -152,10 +152,18 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
         }
         if (logger.isDebugEnabled())
             logger.debug("Load statistics for " + descriptor);
-        DataInputStream dis = new DataInputStream(new FileInputStream(file));
-        estimatedRowSize = EstimatedHistogram.serializer.deserialize(dis);
-        estimatedColumnCount = EstimatedHistogram.serializer.deserialize(dis);
-        dis.close();
+        
+        DataInputStream dis = null;       
+        try
+        {
+            dis = new DataInputStream(new FileInputStream(file));
+            estimatedRowSize = EstimatedHistogram.serializer.deserialize(dis);
+            estimatedColumnCount = EstimatedHistogram.serializer.deserialize(dis);
+        }
+        finally
+        {
+            FileUtils.closeQuietly(dis);
+        }
     }
 
     public static SSTableReader open(Descriptor desc) throws IOException

@@ -110,7 +110,7 @@ parser.add_option('-l', '--replication-factor', type="int", default=1,
 parser.add_option('-e', '--consistency-level', type="str", default='ONE',
                   dest="consistency", help="consistency level to use")
 parser.add_option('-x', '--create-index', type="choice",
-                  choices=('keys','keys_bitmap', 'none'), default='none',
+                  choices=('keys','bitmap', 'none'), default='none',
                   dest="index", help="type of index to create on needed column families")
 
 (options, args) = parser.parse_args()
@@ -180,8 +180,8 @@ def make_keyspaces():
     colms = []
     if options.index == 'keys':
         colms = [ColumnDef(name='C1', validation_class='UTF8Type', index_type=IndexType.KEYS)]
-    elif options.index == 'keys_bitmap':
-        colms = [ColumnDef(name='C1', validation_class='UTF8Type', index_type=IndexType.KEYS_BITMAP)]
+    elif options.index == 'bitmap':
+        colms = [ColumnDef(name='C1', validation_class='UTF8Type', index_type=IndexType.BITMAP)]
     cfams = [CfDef(keyspace='Keyspace1', name='Standard1', column_metadata=colms),
              CfDef(keyspace='Keyspace1', name='Super1', column_type='Super')]
     keyspace = KsDef(name='Keyspace1', strategy_class='org.apache.cassandra.locator.SimpleStrategy', replication_factor=options.replication, cf_defs=cfams)

@@ -436,7 +436,7 @@ public class SSTableWriter extends SSTable
                 // open writers/components for each bitmap secondary index
                 for (ColumnDefinition cdef : metadata.getColumn_metadata().values())
                 {
-                    if (cdef.getIndexType() != IndexType.KEYS_BITMAP)
+                    if (cdef.getIndexType() != IndexType.BITMAP)
                         continue;
 
                     // assign a component id, and open a writer for the index
