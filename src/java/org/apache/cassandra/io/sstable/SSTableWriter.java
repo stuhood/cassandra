@@ -275,6 +275,9 @@ public class SSTableWriter extends SSTable
         {
             if (cfs.isInvalid())
                 return null;
+            // look up existing components, and rebuild requested
+            Set<Component> components = SSTable.componentsFor(desc);
+
             File ifile = new File(desc.filenameFor(SSTable.COMPONENT_INDEX));
             File ffile = new File(desc.filenameFor(SSTable.COMPONENT_FILTER));
             assert !ifile.exists();
@@ -354,8 +357,11 @@ public class SSTableWriter extends SSTable
                 }
             }
 
-            logger.debug("estimated row count was %s of real count", ((double)estimatedRows) / rows);
-            return new Pair<Descriptor, Set<Component>>(rename(desc, iwriter.components), iwriter.components);
+            logger.debug("estimated row count was {} of real count", ((double)estimatedRows) / rows);
+            // rename pre-existing and written components
+            Set<Component> wcomponents = new HashSet<Component>(iwriter.components);
+            wcomponents.addAll(components);
+            return new Pair<Descriptor, Set<Component>>(rename(desc, wcomponents), wcomponents);
         }
 
         public long getTotalBytes()
