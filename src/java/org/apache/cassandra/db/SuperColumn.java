@@ -20,10 +20,12 @@ package org.apache.cassandra.db;
 
 import java.io.DataInput;
 import java.io.DataOutput;
+import java.io.IOError;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +40,7 @@ import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
+import com.google.common.collect.AbstractIterator;
 
 public class SuperColumn implements IColumn, IColumnContainer
 {
@@ -54,6 +57,14 @@ public class SuperColumn implements IColumn, IColumnContainer
     public SuperColumn(ByteBuffer name, AbstractType comparator)
     {
         this(name, new ConcurrentSkipListMap<ByteBuffer, IColumn>(comparator));
+    }
+
+    public SuperColumn(ByteBuffer name, AbstractType comparator, Iterator<IColumn> columns)
+    {
+        assert name != null;
+        assert name.remaining() <= IColumn.MAX_NAME_LENGTH;
+        name_ = name;
+        columns_ = new ConcurrentSkipListMap<ByteBuffer, IColumn>(new ColumnSortedMap(comparator, columns));
     }
 
     SuperColumn(ByteBuffer name, ConcurrentSkipListMap<ByteBuffer, IColumn> columns)
@@ -370,7 +381,7 @@ class SuperColumnSerializer implements IColumnSerializer
         }
     }
 
-    public IColumn deserialize(DataInput dis) throws IOException
+    public IColumn deserialize(final DataInput dis) throws IOException
     {
         return deserialize(dis, null, false);
     }
@@ -385,7 +396,7 @@ class SuperColumnSerializer implements IColumnSerializer
         return deserialize(dis, interner, fromRemote, (int)(System.currentTimeMillis() / 1000));
     }
 
-    public IColumn deserialize(DataInput dis, ColumnFamilyStore interner, boolean fromRemote, int expireBefore) throws IOException
+    public IColumn deserialize(final DataInput dis, final ColumnFamilyStore interner, final boolean fromRemote, final int expireBefore) throws IOException
     {
         ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
         int localDeleteTime = dis.readInt();
@@ -396,10 +407,27 @@ class SuperColumnSerializer implements IColumnSerializer
         long markedForDeleteAt = dis.readLong();
 
         /* read the number of columns */
-        int size = dis.readInt();
-        ColumnSerializer serializer = Column.serializer();
-        ColumnSortedMap preSortedMap = new ColumnSortedMap(comparator, serializer, dis, interner, size, fromRemote, expireBefore);
-        SuperColumn superColumn = new SuperColumn(name, new ConcurrentSkipListMap<ByteBuffer,IColumn>(preSortedMap));
+        final int size = dis.readInt();
+        AbstractIterator<IColumn> columns = new AbstractIterator<IColumn>()
+        {
+            ColumnSerializer serializer = Column.serializer();
+            int count = 0;
+            @Override
+            public IColumn computeNext()
+            {
+                if (count++ >= size)
+                    return endOfData();
+                try
+                {
+                    return serializer.deserialize(dis, interner, fromRemote, expireBefore);
+                }
+                catch (IOException e)
+                {
+                    throw new IOError(e);
+                }
+            }
+        };
+        SuperColumn superColumn = new SuperColumn(name, comparator, columns);
         if (localDeleteTime != Integer.MIN_VALUE && localDeleteTime <= 0)
         {
             throw new IOException("Invalid localDeleteTime read: " + localDeleteTime);
