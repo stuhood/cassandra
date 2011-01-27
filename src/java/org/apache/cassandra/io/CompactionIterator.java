@@ -24,10 +24,10 @@ package org.apache.cassandra.io;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
-import org.apache.commons.collections.iterators.CollatingIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +37,9 @@ import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.ReducingIterator;
 
 public class CompactionIterator extends ReducingIterator<SSTableIdentityIterator, AbstractCompactedRow>
@@ -58,7 +60,7 @@ implements Closeable, ICompactionInfo
 
     public CompactionIterator(ColumnFamilyStore cfs, Iterable<SSTableReader> sstables, int gcBefore, boolean major) throws IOException
     {
-        this(cfs, getCollatingIterator(sstables), gcBefore, major);
+        this(cfs, getMergeIterator(sstables), gcBefore, major);
     }
 
     @SuppressWarnings("unchecked")
@@ -77,15 +79,14 @@ implements Closeable, ICompactionInfo
     }
 
     @SuppressWarnings("unchecked")
-    protected static CollatingIterator getCollatingIterator(Iterable<SSTableReader> sstables) throws IOException
+    protected static MergeIterator getMergeIterator(Iterable<SSTableReader> sstables) throws IOException
     {
-        // TODO CollatingIterator iter = FBUtilities.<SSTableIdentityIterator>getCollatingIterator();
-        CollatingIterator iter = FBUtilities.getCollatingIterator();
+        ArrayList<SSTableScanner> scanners = new ArrayList<SSTableScanner>();
         for (SSTableReader sstable : sstables)
         {
-            iter.addIterator(sstable.getDirectScanner(FILE_BUFFER_SIZE));
+            scanners.add(sstable.getDirectScanner(FILE_BUFFER_SIZE));
         }
-        return iter;
+        return new MergeIterator(scanners, new FBUtilities.CountedComparator());
     }
 
     @Override
@@ -141,17 +142,14 @@ implements Closeable, ICompactionInfo
 
     public void close() throws IOException
     {
-        FBUtilities.CountedComparator comp = (FBUtilities.CountedComparator)(((CollatingIterator)source).getComparator());
+        FBUtilities.CountedComparator comp = (FBUtilities.CountedComparator)(((MergeIterator)source).comp);
         System.out.println(comp.comparisons() + " for " + this);
-        for (SSTableScanner scanner : getScanners())
-        {
-            scanner.close();
-        }
+        ((MergeIterator)source).close();
     }
 
     protected Iterable<SSTableScanner> getScanners()
     {
-        return ((CollatingIterator)source).getIterators();
+        return ((MergeIterator)source).iterators;
     }
 
     public long getTotalBytes()
