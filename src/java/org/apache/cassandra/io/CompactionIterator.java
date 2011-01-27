@@ -30,6 +30,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.google.common.collect.Ordering;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -86,7 +87,7 @@ implements Closeable, ICompactionInfo
         {
             scanners.add(sstable.getDirectScanner(FILE_BUFFER_SIZE));
         }
-        return new MergeIterator(scanners, new FBUtilities.CountedComparator());
+        return new MergeIterator(scanners, Ordering.natural());
     }
 
     @Override
@@ -142,8 +143,6 @@ implements Closeable, ICompactionInfo
 
     public void close() throws IOException
     {
-        FBUtilities.CountedComparator comp = (FBUtilities.CountedComparator)(((MergeIterator)source).comp);
-        System.out.println(comp.comparisons() + " for " + this);
         ((MergeIterator)source).close();
     }
 
