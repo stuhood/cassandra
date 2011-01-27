@@ -33,7 +33,6 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import com.google.common.collect.Iterables;
-import org.apache.commons.collections.IteratorUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1298,8 +1297,9 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             sstablesPerRead.add(sstablesToIterate);
 
             Comparator<IColumn> comparator = filter.filter.getColumnComparator(getComparator());
-            Iterator collated = IteratorUtils.collatedIterator(comparator, iterators);
-
+            Iterator collated = MergeIterator.get(iterators, comparator);
+          
+                     
             filter.collectCollatedColumns(returnCF, collated, gcBefore);
 
             // Caller is responsible for final removeDeletedCF.  This is important for cacheRow to work correctly:
@@ -1353,7 +1353,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         // It is fine to aliases the View.sstables since it's an unmodifiable collection
         Collection<SSTableReader> sstables = currentView.sstables;
 
-        RowIterator iterator = RowIteratorFactory.getIterator(memtables, sstables, startWith, stopAt, filter, getComparator(), this);
+        CloseableIterator<Row> iterator = RowIteratorFactory.getIterator(memtables, sstables, startWith, stopAt, filter, getComparator(), this);
         List<Row> rows = new ArrayList<Row>();
 
         try

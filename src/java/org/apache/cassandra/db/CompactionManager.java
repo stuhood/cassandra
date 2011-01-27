@@ -51,8 +51,8 @@ import org.apache.cassandra.service.AntiEntropyService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.OperationType;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.NodeId;
+import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
@@ -1151,18 +1151,16 @@ public class CompactionManager implements CompactionManagerMBean
         public ValidationCompactionIterator(ColumnFamilyStore cfs, Range range) throws IOException
         {
             super(CompactionType.VALIDATION,
-                  getCollatingIterator(cfs.getSSTables(), range),
+                  getScanners(cfs.getSSTables(), range),
                   new CompactionController(cfs, cfs.getSSTables(), getDefaultGcBefore(cfs), true));
         }
 
-        protected static CollatingIterator getCollatingIterator(Iterable<SSTableReader> sstables, Range range) throws IOException
+        protected static List<SSTableScanner> getScanners(Iterable<SSTableReader> sstables, Range range) throws IOException
         {
-            CollatingIterator iter = FBUtilities.getCollatingIterator();
+            ArrayList<SSTableScanner> scanners = new ArrayList<SSTableScanner>();
             for (SSTableReader sstable : sstables)
-            {
-                iter.addIterator(sstable.getDirectScanner(FILE_BUFFER_SIZE, range));
-            }
-            return iter;
+                scanners.add(sstable.getDirectScanner(FILE_BUFFER_SIZE, range));
+            return scanners;
         }
     }
 

@@ -309,7 +309,7 @@ public class LazilyCompactedRowTest extends CleanupHelper
         {
             super(cfs, sstables, gcBefore, forceDeserialize);
         }
-
+        
         @Override
         public AbstractCompactedRow getCompactedRow(List<SSTableIdentityIterator> rows)
         {
@@ -324,6 +324,7 @@ public class LazilyCompactedRowTest extends CleanupHelper
             super(cfs, sstables, gcBefore, forceDeserialize);
         }
 
+        
         @Override
         public AbstractCompactedRow getCompactedRow(List<SSTableIdentityIterator> rows)
         {

@@ -27,8 +27,9 @@ import java.util.Iterator;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.utils.CloseableIterator;
 
-public interface IColumnIterator extends Iterator<IColumn>
+public interface IColumnIterator extends CloseableIterator<IColumn>
 {
     /**
      * @return An empty CF holding metadata for the row being iterated.
@@ -39,8 +40,5 @@ public interface IColumnIterator extends Iterator<IColumn>
      * @return the current row key
      */
     public DecoratedKey getKey();
-
-    /** clean up any open resources */
-    public void close() throws IOException;
 }
 
