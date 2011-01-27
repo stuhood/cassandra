@@ -23,29 +23,28 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 
-import org.apache.commons.collections.iterators.CollatingIterator;
-
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.ReducingIterator;
 
 public class ReducingKeyIterator implements Iterator<DecoratedKey>, Closeable
 {
-    private final CollatingIterator ci;
+    private final MergeIterator mi;
     private final ReducingIterator<DecoratedKey, DecoratedKey> iter;
 
     public ReducingKeyIterator(Collection<SSTableReader> sstables)
     {
-        ci = FBUtilities.getCollatingIterator();
+        ArrayList<KeyIterator> iters = new ArrayList<KeyIterator>();
         for (SSTableReader sstable : sstables)
-        {
-            ci.addIterator(new KeyIterator(sstable.descriptor));
-        }
+            iters.add(new KeyIterator(sstable.descriptor));
+        mi = new MergeIterator(iters);
 
-        iter = new ReducingIterator<DecoratedKey, DecoratedKey>(ci)
+        iter = new ReducingIterator<DecoratedKey, DecoratedKey>(mi)
         {
             DecoratedKey reduced = null;
 
@@ -63,7 +62,7 @@ public class ReducingKeyIterator implements Iterator<DecoratedKey>, Closeable
 
     public void close() throws IOException
     {
-        for (Object o : ci.getIterators())
+        for (Object o : mi.iterators)
         {
             ((KeyIterator) o).close();
         }
@@ -72,7 +71,7 @@ public class ReducingKeyIterator implements Iterator<DecoratedKey>, Closeable
     public long getTotalBytes()
     {
         long m = 0;
-        for (Object o : ci.getIterators())
+        for (Object o : mi.iterators)
         {
             m += ((KeyIterator) o).getTotalBytes();
         }
@@ -82,7 +81,7 @@ public class ReducingKeyIterator implements Iterator<DecoratedKey>, Closeable
     public long getBytesRead()
     {
         long m = 0;
-        for (Object o : ci.getIterators())
+        for (Object o : mi.iterators)
         {
             m += ((KeyIterator) o).getBytesRead();
         }

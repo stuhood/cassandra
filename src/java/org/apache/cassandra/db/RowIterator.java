@@ -24,11 +24,12 @@ import java.util.List;
 
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.utils.ReducingIterator;
+import org.apache.cassandra.utils.CloseableIterator;
 
 /**
  * Row iterator that allows us to close the underlying iterators.
  */
-public class RowIterator implements Closeable, Iterator<Row>
+public class RowIterator implements CloseableIterator<Row>
 {
     private ReducingIterator<IColumnIterator, Row> reduced;
     private List<Iterator<IColumnIterator>> iterators;

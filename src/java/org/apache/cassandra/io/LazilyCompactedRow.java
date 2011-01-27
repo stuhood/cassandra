@@ -29,7 +29,6 @@ import java.util.*;
 
 import com.google.common.base.Predicates;
 import com.google.common.collect.Iterators;
-import org.apache.commons.collections.iterators.CollatingIterator;
 
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -40,6 +39,7 @@ import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.IIterableColumns;
+import org.apache.cassandra.utils.MergeIterator;
 import org.apache.cassandra.utils.ReducingIterator;
 
 /**
@@ -173,7 +173,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
                 return getComparator().compare(o1.name(), o2.name());
             }
         };
-        iter = new LazyColumnIterator(new CollatingIterator(nameComparator, rows));
+        iter = new LazyColumnIterator(new MergeIterator(rows, nameComparator));
         return Iterators.filter(iter, Predicates.notNull());
     }
 
