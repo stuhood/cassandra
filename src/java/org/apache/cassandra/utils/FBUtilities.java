@@ -306,6 +306,19 @@ public class FBUtilities
         }
     }
 
+    /** FIXME: unchecked */
+    public static class CountedComparator implements Comparator
+    {
+        long comparisons = 0;
+        public CountedComparator(){}
+        public long comparisons(){ return comparisons; } 
+        public int compare(Object o1, Object o2)
+        {
+            comparisons++;
+            return ((Comparable) o1).compareTo(o2);
+        }
+    }
+
     /*
     TODO how to make this work w/ ReducingKeyIterator?
     public static <T extends Comparable<T>> CollatingIterator getCollatingIterator()
@@ -323,13 +336,7 @@ public class FBUtilities
     public static CollatingIterator getCollatingIterator()
     {
         // CollatingIterator will happily NPE if you do not specify a comparator explicitly
-        return new CollatingIterator(new Comparator()
-        {
-            public int compare(Object o1, Object o2)
-            {
-                return ((Comparable) o1).compareTo(o2);
-            }
-        });
+        return new CollatingIterator(new CountedComparator());
     }
 
     public static void atomicSetMax(AtomicInteger atomic, int i)

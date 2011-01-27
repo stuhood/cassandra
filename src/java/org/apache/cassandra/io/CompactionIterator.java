@@ -141,6 +141,8 @@ implements Closeable, ICompactionInfo
 
     public void close() throws IOException
     {
+        FBUtilities.CountedComparator comp = (FBUtilities.CountedComparator)(((CollatingIterator)source).getComparator());
+        System.out.println(comp.comparisons() + " for " + this);
         for (SSTableScanner scanner : getScanners())
         {
             scanner.close();
