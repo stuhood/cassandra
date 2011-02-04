@@ -70,6 +70,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   private static final org.apache.thrift.protocol.TField KEY_VALIDATION_CLASS_FIELD_DESC = new org.apache.thrift.protocol.TField("key_validation_class", org.apache.thrift.protocol.TType.STRING, (short)26);
   private static final org.apache.thrift.protocol.TField ROW_CACHE_PROVIDER_FIELD_DESC = new org.apache.thrift.protocol.TField("row_cache_provider", org.apache.thrift.protocol.TType.STRING, (short)27);
   private static final org.apache.thrift.protocol.TField KEY_ALIAS_FIELD_DESC = new org.apache.thrift.protocol.TField("key_alias", org.apache.thrift.protocol.TType.STRING, (short)28);
+  private static final org.apache.thrift.protocol.TField BLOCK_SIZE_IN_KB_FIELD_DESC = new org.apache.thrift.protocol.TField("block_size_in_kb", org.apache.thrift.protocol.TType.I32, (short)29);
 
   public String keyspace;
   public String name;
@@ -96,6 +97,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   public String key_validation_class;
   public String row_cache_provider;
   public ByteBuffer key_alias;
+  public int block_size_in_kb;
 
   /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
   public enum _Fields implements org.apache.thrift.TFieldIdEnum {
@@ -123,7 +125,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     MERGE_SHARDS_CHANCE((short)25, "merge_shards_chance"),
     KEY_VALIDATION_CLASS((short)26, "key_validation_class"),
     ROW_CACHE_PROVIDER((short)27, "row_cache_provider"),
-    KEY_ALIAS((short)28, "key_alias");
+    KEY_ALIAS((short)28, "key_alias"),
+    BLOCK_SIZE_IN_KB((short)29, "block_size_in_kb");
 
     private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -188,6 +191,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
           return ROW_CACHE_PROVIDER;
         case 28: // KEY_ALIAS
           return KEY_ALIAS;
+        case 29: // BLOCK_SIZE_IN_KB
+          return BLOCK_SIZE_IN_KB;
         default:
           return null;
       }
@@ -242,7 +247,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
   private static final int __MEMTABLE_OPERATIONS_IN_MILLIONS_ISSET_ID = 11;
   private static final int __REPLICATE_ON_WRITE_ISSET_ID = 12;
   private static final int __MERGE_SHARDS_CHANCE_ISSET_ID = 13;
-  private BitSet __isset_bit_vector = new BitSet(14);
+  private static final int __BLOCK_SIZE_IN_KB_ISSET_ID = 14;
+  private BitSet __isset_bit_vector = new BitSet(15);
 
   public static final Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> metaDataMap;
   static {
@@ -298,6 +304,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING)));
     tmpMap.put(_Fields.KEY_ALIAS, new org.apache.thrift.meta_data.FieldMetaData("key_alias", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
         new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING        , true)));
+    tmpMap.put(_Fields.BLOCK_SIZE_IN_KB, new org.apache.thrift.meta_data.FieldMetaData("block_size_in_kb", org.apache.thrift.TFieldRequirementType.OPTIONAL, 
+        new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.I32)));
     metaDataMap = Collections.unmodifiableMap(tmpMap);
     org.apache.thrift.meta_data.FieldMetaData.addStructMetaDataMap(CfDef.class, metaDataMap);
   }
@@ -384,6 +392,7 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       this.key_alias = org.apache.thrift.TBaseHelper.copyBinary(other.key_alias);
 ;
     }
+    this.block_size_in_kb = other.block_size_in_kb;
   }
 
   public CfDef deepCopy() {
@@ -434,6 +443,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     this.row_cache_provider = "org.apache.cassandra.cache.ConcurrentLinkedHashCacheProvider";
 
     this.key_alias = null;
+    setBlock_size_in_kbIsSet(false);
+    this.block_size_in_kb = 0;
   }
 
   public String getKeyspace() {
@@ -1047,6 +1058,29 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     }
   }
 
+  public int getBlock_size_in_kb() {
+    return this.block_size_in_kb;
+  }
+
+  public CfDef setBlock_size_in_kb(int block_size_in_kb) {
+    this.block_size_in_kb = block_size_in_kb;
+    setBlock_size_in_kbIsSet(true);
+    return this;
+  }
+
+  public void unsetBlock_size_in_kb() {
+    __isset_bit_vector.clear(__BLOCK_SIZE_IN_KB_ISSET_ID);
+  }
+
+  /** Returns true if field block_size_in_kb is set (has been assigned a value) and false otherwise */
+  public boolean isSetBlock_size_in_kb() {
+    return __isset_bit_vector.get(__BLOCK_SIZE_IN_KB_ISSET_ID);
+  }
+
+  public void setBlock_size_in_kbIsSet(boolean value) {
+    __isset_bit_vector.set(__BLOCK_SIZE_IN_KB_ISSET_ID, value);
+  }
+
   public void setFieldValue(_Fields field, Object value) {
     switch (field) {
     case KEYSPACE:
@@ -1249,6 +1283,14 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       }
       break;
 
+    case BLOCK_SIZE_IN_KB:
+      if (value == null) {
+        unsetBlock_size_in_kb();
+      } else {
+        setBlock_size_in_kb((Integer)value);
+      }
+      break;
+
     }
   }
 
@@ -1329,6 +1371,9 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     case KEY_ALIAS:
       return getKey_alias();
 
+    case BLOCK_SIZE_IN_KB:
+      return new Integer(getBlock_size_in_kb());
+
     }
     throw new IllegalStateException();
   }
@@ -1390,6 +1435,8 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       return isSetRow_cache_provider();
     case KEY_ALIAS:
       return isSetKey_alias();
+    case BLOCK_SIZE_IN_KB:
+      return isSetBlock_size_in_kb();
     }
     throw new IllegalStateException();
   }
@@ -1632,6 +1679,15 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         return false;
     }
 
+    boolean this_present_block_size_in_kb = true && this.isSetBlock_size_in_kb();
+    boolean that_present_block_size_in_kb = true && that.isSetBlock_size_in_kb();
+    if (this_present_block_size_in_kb || that_present_block_size_in_kb) {
+      if (!(this_present_block_size_in_kb && that_present_block_size_in_kb))
+        return false;
+      if (this.block_size_in_kb != that.block_size_in_kb)
+        return false;
+    }
+
     return true;
   }
 
@@ -1763,6 +1819,11 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
     builder.append(present_key_alias);
     if (present_key_alias)
       builder.append(key_alias);
+
+    boolean present_block_size_in_kb = true && (isSetBlock_size_in_kb());
+    builder.append(present_block_size_in_kb);
+    if (present_block_size_in_kb)
+      builder.append(block_size_in_kb);
 
     return builder.toHashCode();
   }
@@ -2025,6 +2086,16 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         return lastComparison;
       }
     }
+    lastComparison = Boolean.valueOf(isSetBlock_size_in_kb()).compareTo(typedOther.isSetBlock_size_in_kb());
+    if (lastComparison != 0) {
+      return lastComparison;
+    }
+    if (isSetBlock_size_in_kb()) {
+      lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.block_size_in_kb, typedOther.block_size_in_kb);
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+    }
     return 0;
   }
 
@@ -2242,6 +2313,14 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
             org.apache.thrift.protocol.TProtocolUtil.skip(iprot, field.type);
           }
           break;
+        case 29: // BLOCK_SIZE_IN_KB
+          if (field.type == org.apache.thrift.protocol.TType.I32) {
+            this.block_size_in_kb = iprot.readI32();
+            setBlock_size_in_kbIsSet(true);
+          } else { 
+            org.apache.thrift.protocol.TProtocolUtil.skip(iprot, field.type);
+          }
+          break;
         default:
           org.apache.thrift.protocol.TProtocolUtil.skip(iprot, field.type);
       }
@@ -2406,6 +2485,11 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
         oprot.writeBinary(this.key_alias);
         oprot.writeFieldEnd();
       }
+    }
+    if (isSetBlock_size_in_kb()) {
+      oprot.writeFieldBegin(BLOCK_SIZE_IN_KB_FIELD_DESC);
+      oprot.writeI32(this.block_size_in_kb);
+      oprot.writeFieldEnd();
     }
     oprot.writeFieldStop();
     oprot.writeStructEnd();
@@ -2603,6 +2687,12 @@ public class CfDef implements org.apache.thrift.TBase<CfDef, CfDef._Fields>, jav
       } else {
         org.apache.thrift.TBaseHelper.toString(this.key_alias, sb);
       }
+      first = false;
+    }
+    if (isSetBlock_size_in_kb()) {
+      if (!first) sb.append(", ");
+      sb.append("block_size_in_kb:");
+      sb.append(this.block_size_in_kb);
       first = false;
     }
     sb.append(")");

@@ -87,7 +87,8 @@ public class SSTableWriter extends SSTable implements Closeable
     private void createAppender()
     {
         appender = new ChunkAppender(dataFile,
-                                     metadata.cfType == ColumnFamilyType.Standard ? 3 : 4);
+                                     metadata.cfType == ColumnFamilyType.Standard ? 3 : 4,
+                                     metadata.getBlockSizeInKB());
     }
 
     public void mark() throws IOException

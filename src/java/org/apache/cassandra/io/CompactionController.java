@@ -104,20 +104,15 @@ public class CompactionController
     }
 
     /**
-     * @return an AbstractCompactedRow implementation to write the merged rows in question.
-     *
-     * If there is a single source row, the data is from a current-version sstable,
-     * and we aren't forcing deserialization for scrub,
-     * write it unchanged.  Otherwise, we deserialize, purge tombstones, and
-     * reserialize in the latest version.
+     * @return a CompactedRow implementation to write the merged rows in question.
      */
-    public AbstractCompactedRow getCompactedRow(List<SSTableIdentityIterator> rows)
+    public CompactedRow getCompactedRow(List<SSTableIdentityIterator> rows)
     {
         return new CompactedRow(this, rows);
     }
 
     /** convenience method for single-sstable compactions */
-    public AbstractCompactedRow getCompactedRow(SSTableIdentityIterator row)
+    public CompactedRow getCompactedRow(SSTableIdentityIterator row)
     {
         return getCompactedRow(Collections.singletonList(row));
     }

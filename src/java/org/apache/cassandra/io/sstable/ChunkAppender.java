@@ -56,9 +56,6 @@ class ChunkAppender
 {
     private static Logger logger = LoggerFactory.getLogger(SSTableWriter.class);
 
-    // FIXME: this is a purposely ridiculous default for SPAN_MAX_TUPLES: will
-    // need to be configurable as a per-cf "target bytes per block/span" setting.
-    private static final int SPAN_MAX_TUPLES = 2;
     private static final Schema BYTE_BUFFER_SCHEMA = Schema.createArray(Schema.parse("{\"type\": \"bytes\"}"));
 
     private final DataFileWriter<Chunk> dataFile;
@@ -67,9 +64,14 @@ class ChunkAppender
     private final Chunk[] chunks;
     private final boolean[] parents;
     private final boolean[] isOpen;
+    private long spanBytes;
 
-    public ChunkAppender(DataFileWriter<Chunk> dataFile, int chunksPerSpan)
+    // target size of a span, in bytes
+    private final long targetSpanBytes;
+
+    public ChunkAppender(DataFileWriter<Chunk> dataFile, int chunksPerSpan, int targetSpanSizeInKB)
     {
+        this.targetSpanBytes = targetSpanSizeInKB * 1024;
         this.dataFile = dataFile;
         this.chunks = new Chunk[chunksPerSpan];
         this.parents = new boolean[chunksPerSpan];
@@ -77,10 +79,10 @@ class ChunkAppender
         for (int i = 0; i < chunksPerSpan; i++)
         {
             Chunk chunk = new Chunk();
-            chunk.values = SerDeUtils.<ByteBuffer>createArray(SPAN_MAX_TUPLES, BYTE_BUFFER_SCHEMA);
-            chunk.ranges = SerDeUtils.<ByteBuffer>createArray(SPAN_MAX_TUPLES, BYTE_BUFFER_SCHEMA);
-            chunk.value_metadata = SerDeUtils.<ChunkFieldMetadata>createArray(SPAN_MAX_TUPLES, ChunkFieldMetadata.SCHEMA$);
-            chunk.range_metadata = SerDeUtils.<ChunkFieldMetadata>createArray(SPAN_MAX_TUPLES, ChunkFieldMetadata.SCHEMA$);
+            chunk.values = SerDeUtils.<ByteBuffer>createArray(256, BYTE_BUFFER_SCHEMA);
+            chunk.ranges = SerDeUtils.<ByteBuffer>createArray(256, BYTE_BUFFER_SCHEMA);
+            chunk.value_metadata = SerDeUtils.<ChunkFieldMetadata>createArray(256, ChunkFieldMetadata.SCHEMA$);
+            chunk.range_metadata = SerDeUtils.<ChunkFieldMetadata>createArray(256, ChunkFieldMetadata.SCHEMA$);
             chunk.chunk = i;
             chunks[i] = chunk;
             parents[i] = false;
@@ -203,6 +205,8 @@ class ChunkAppender
     {
         chunks[depth].values.add(value);
         chunks[depth].value_metadata.add(cfm);
+        // FIXME: rough approx of metadata size: we'll be packing it sometime soon anyway
+        spanBytes += value.remaining() + 5;
     }
 
     /** Adds range metadata to a chunk. */
@@ -232,6 +236,8 @@ class ChunkAppender
         chunks[depth].ranges.add(start);
         chunks[depth].range_metadata.add(cfm);
         isOpen[depth] = true;
+        // FIXME: rough approx of metadata size: we'll be packing it sometime soon anyway
+        spanBytes += start.remaining() + 5;
     }
 
     private void closeRangeMetadata(int depth, ByteBuffer end)
@@ -241,6 +247,7 @@ class ChunkAppender
         // ...right
         chunk.ranges.add(end);
         isOpen[depth] = false;
+        spanBytes += end.remaining();
     }
 
     /**
@@ -250,7 +257,7 @@ class ChunkAppender
     private void maybeAppendAndReset() throws IOException
     {
         // the threshold of the last level is the most important, since it is the base of the tree
-        if (chunks[chunks.length - 1].values.size() >= SPAN_MAX_TUPLES)
+        if (spanBytes >= targetSpanBytes)
             appendAndReset();
     }
 
@@ -258,6 +265,7 @@ class ChunkAppender
     {
         if (isFlushed())
             return;
+
         /**
          * Stash state for any open ranges.
          * We need to preserve any open ranges w/ parents but we'd like to avoid
@@ -308,6 +316,7 @@ class ChunkAppender
             chunk.ranges.clear();
             chunk.range_metadata.clear();
         }
+        spanBytes = 0;
         /**
          * Restore any ranges that were open.
          */
