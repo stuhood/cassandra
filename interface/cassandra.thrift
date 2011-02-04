@@ -398,6 +398,7 @@ struct CfDef {
     30: optional map<string,string> compaction_strategy_options,
     31: optional i32 row_cache_keys_to_save,
     32: optional bool compression,
+    33: optional i32 block_size_in_kb
 }
 
 /* describes a keyspace. */

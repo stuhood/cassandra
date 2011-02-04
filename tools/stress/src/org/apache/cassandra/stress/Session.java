@@ -85,6 +85,7 @@ public class Session implements Serializable
         availableOptions.addOption("V",  "average-size-values",  false,  "Generate column values of average rather than specific size");
         availableOptions.addOption("T",  "send-to",              true,   "Send this as a request to the stress daemon at specified address.");
         availableOptions.addOption("I",  "compression",          false,  "Use sstable compression when creating schema");
+        availableOptions.addOption("b",  "block-size",           true,   "The block size in KB to use when creating column families.");
         availableOptions.addOption("Q",  "query-names",          true,   "Comma-separated list of column names to retrieve from each row.");
     }
 
@@ -127,6 +128,7 @@ public class Session implements Serializable
     protected float sigma;
 
     public final InetAddress sendToDaemon;
+    public final int blockSize;
 
     public Session(String[] arguments) throws IllegalArgumentException
     {
@@ -286,6 +288,10 @@ public class Session implements Serializable
             {
                 throw new RuntimeException(e);
             }
+
+            blockSize = cmd.hasOption("b") ?
+                Integer.parseInt(cmd.getOptionValue("b")) :
+                8;
 
             if (cmd.hasOption("Q"))
             {
@@ -480,7 +486,10 @@ public class Session implements Serializable
             keyspace.setStrategy_options(replicationStrategyOptions);
         }
 
-        keyspace.setCf_defs(new ArrayList<CfDef>(Arrays.asList(standardCfDef, superCfDef, counterCfDef, counterSuperCfDef)));
+        ArrayList<CfDef> cfdefs = new ArrayList<CfDef>(Arrays.asList(standardCfDef, superCfDef, counterCfDef, counterSuperCfDef));
+        for (CfDef cfdef : cfdefs)
+            cfdef.setBlock_size_in_kb(blockSize);
+        keyspace.setCf_defs(cfdefs);
 
         Cassandra.Client client = getClient(false);
 

@@ -132,6 +132,7 @@ public class CliClient
         DEFAULT_VALIDATION_CLASS,
         MIN_COMPACTION_THRESHOLD,
         MAX_COMPACTION_THRESHOLD,
+        BLOCK_SIZE_IN_KB,
         REPLICATE_ON_WRITE,
         ROW_CACHE_PROVIDER,
         KEY_VALIDATION_CLASS,
@@ -1238,6 +1239,9 @@ public class CliClient
                 break;
             case MAX_COMPACTION_THRESHOLD:
                 cfDef.setMax_compaction_threshold(Integer.parseInt(mValue));
+                break;
+            case BLOCK_SIZE_IN_KB:
+                cfDef.setBlock_size_in_kb(Integer.parseInt(mValue));
                 break;
             case REPLICATE_ON_WRITE:
                 cfDef.setReplicate_on_write(Boolean.parseBoolean(mValue));

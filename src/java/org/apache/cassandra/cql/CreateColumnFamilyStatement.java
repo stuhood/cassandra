@@ -52,6 +52,7 @@ public class CreateColumnFamilyStatement
     private static final String KW_MAXCOMPACTIONTHRESHOLD = "max_compaction_threshold";
     private static final String KW_ROWCACHESAVEPERIODSECS = "row_cache_save_period_in_seconds";
     private static final String KW_KEYCACHESAVEPERIODSECS = "key_cache_save_period_in_seconds";
+    private static final String KW_BLOCKSIZEINKB = "block_size_in_kb";
     private static final String KW_MEMTABLESIZEINMB = "memtable_throughput_in_mb";
     private static final String KW_MEMTABLEOPSINMILLIONS = "memtable_operations_in_millions";
     private static final String KW_REPLICATEONWRITE = "replicate_on_write";
@@ -88,6 +89,7 @@ public class CreateColumnFamilyStatement
         keywords.add(KW_MAXCOMPACTIONTHRESHOLD);
         keywords.add(KW_ROWCACHESAVEPERIODSECS);
         keywords.add(KW_KEYCACHESAVEPERIODSECS);
+        keywords.add(KW_BLOCKSIZEINKB);
         keywords.add(KW_MEMTABLESIZEINMB);
         keywords.add(KW_MEMTABLEOPSINMILLIONS);
         keywords.add(KW_REPLICATEONWRITE);
@@ -305,6 +307,7 @@ public class CreateColumnFamilyStatement
                    .mergeShardsChance(0.0)
                    .columnMetadata(getColumns(comparator))
                    .keyValidator(TypeParser.parse(comparators.get(getKeyType())))
+                   .blockSizeInKB(getPropertyInt(KW_BLOCKSIZEINKB, CFMetaData.DEFAULT_BLOCK_SIZE_IN_KB))
                    .rowCacheProvider(FBUtilities.newCacheProvider(getPropertyString(KW_ROW_CACHE_PROVIDER, CFMetaData.DEFAULT_ROW_CACHE_PROVIDER)))
                    .keyAlias(keyAlias);
         }

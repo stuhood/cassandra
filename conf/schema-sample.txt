@@ -30,7 +30,8 @@ create column family Standard2
     and keys_cached = 100
     and gc_grace = 0
     and min_compaction_threshold = 5
-    and max_compaction_threshold = 31;
+    and max_compaction_threshold = 31
+    and block_size_in_kb = 32;
 
 create column family StandardByUUID1
     with comparator = TimeUUIDType;

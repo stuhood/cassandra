@@ -70,6 +70,7 @@ public final class CFMetaData
     public final static int DEFAULT_GC_GRACE_SECONDS = 864000;
     public final static int DEFAULT_MIN_COMPACTION_THRESHOLD = 4;
     public final static int DEFAULT_MAX_COMPACTION_THRESHOLD = 32;
+    public final static int DEFAULT_BLOCK_SIZE_IN_KB = 8;
     public final static int DEFAULT_MEMTABLE_THROUGHPUT_IN_MB = sizeMemtableThroughput();
     public final static double DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS = sizeMemtableOperations(DEFAULT_MEMTABLE_THROUGHPUT_IN_MB);
     public final static double DEFAULT_MERGE_SHARDS_CHANCE = 0.1;
@@ -124,6 +125,7 @@ public final class CFMetaData
     private int keyCacheSavePeriodInSeconds;          // default 3600 (1 hour)
     private int rowCacheKeysToSave;                   // default max int (aka feature is off)
     private int memtableThroughputInMb;               // default based on heap size
+    private int blockSizeInKB;                        // number of bytes per block on disk
     private double memtableOperationsInMillions;      // default based on throughput
     private double mergeShardsChance;                 // default 0.1, chance [0.0, 1.0] of merging old shards during replication
     private IRowCacheProvider rowCacheProvider;
@@ -156,6 +158,7 @@ public final class CFMetaData
     public CFMetaData rowCacheProvider(IRowCacheProvider prop) { rowCacheProvider = prop; return this;}
     public CFMetaData compactionStrategyClass(Class<? extends AbstractCompactionStrategy> prop) {compactionStrategyClass = prop; return this;}
     public CFMetaData compactionStrategyOptions(Map<String, String> prop) {compactionStrategyOptions = prop; return this;}
+    public CFMetaData blockSizeInKB(int prop) { blockSizeInKB = prop; return this;}
 
     public CFMetaData(String keyspace, String name, ColumnFamilyType type, AbstractType comp, AbstractType subcc)
     {
@@ -203,6 +206,7 @@ public final class CFMetaData
         memtableOperationsInMillions = DEFAULT_MEMTABLE_OPERATIONS_IN_MILLIONS;
         mergeShardsChance            = DEFAULT_MERGE_SHARDS_CHANCE;
         compression                  = DEFAULT_COMPRESSION;
+        blockSizeInKB                = DEFAULT_BLOCK_SIZE_IN_KB;
         try
         {
             rowCacheProvider             = FBUtilities.newCacheProvider(DEFAULT_ROW_CACHE_PROVIDER);
@@ -286,6 +290,7 @@ public final class CFMetaData
                       .rowCacheKeysToSave(oldCFMD.rowCacheKeysToSave)
                       .memSize(oldCFMD.memtableThroughputInMb)
                       .memOps(oldCFMD.memtableOperationsInMillions)
+                      .blockSizeInKB(oldCFMD.blockSizeInKB)
                       .columnMetadata(oldCFMD.column_metadata)
                       .compactionStrategyClass(oldCFMD.compactionStrategyClass)
                       .compactionStrategyOptions(oldCFMD.compactionStrategyOptions)
@@ -329,6 +334,7 @@ public final class CFMetaData
         cf.row_cache_save_period_in_seconds = rowCacheSavePeriodInSeconds;
         cf.key_cache_save_period_in_seconds = keyCacheSavePeriodInSeconds;
         cf.row_cache_keys_to_save = rowCacheKeysToSave;
+        cf.block_size_in_kb = blockSizeInKB;
         cf.memtable_throughput_in_mb = memtableThroughputInMb;
         cf.memtable_operations_in_millions = memtableOperationsInMillions;
         cf.merge_shards_chance = mergeShardsChance;
@@ -433,6 +439,7 @@ public final class CFMetaData
                       .gcGraceSeconds(cf.gc_grace_seconds)
                       .defaultValidator(validator)
                       .keyValidator(keyValidator)
+                      .blockSizeInKB(cf.block_size_in_kb)
                       .columnMetadata(column_metadata)
                       .compression(cf.compression);
     }
@@ -500,6 +507,11 @@ public final class CFMetaData
     public int getKeyCacheSavePeriodInSeconds()
     {
         return keyCacheSavePeriodInSeconds;
+    }
+
+    public int getBlockSizeInKB()
+    {
+        return blockSizeInKB;
     }
 
     public int getRowCacheKeysToSave()
@@ -594,6 +606,7 @@ public final class CFMetaData
             .append(rowCacheSavePeriodInSeconds, rhs.rowCacheSavePeriodInSeconds)
             .append(keyCacheSavePeriodInSeconds, rhs.keyCacheSavePeriodInSeconds)
             .append(rowCacheKeysToSave, rhs.rowCacheKeysToSave)
+            .append(blockSizeInKB, rhs.blockSizeInKB)
             .append(memtableThroughputInMb, rhs.memtableThroughputInMb)
             .append(memtableOperationsInMillions, rhs.memtableOperationsInMillions)
             .append(mergeShardsChance, rhs.mergeShardsChance)
@@ -710,6 +723,7 @@ public final class CFMetaData
         if (cf_def.isSetRow_cache_provider()) { newCFMD.rowCacheProvider(FBUtilities.newCacheProvider(cf_def.row_cache_provider)); }
         if (cf_def.isSetKey_alias()) { newCFMD.keyAlias(cf_def.key_alias); }
         if (cf_def.isSetKey_validation_class()) { newCFMD.keyValidator(TypeParser.parse(cf_def.key_validation_class)); }
+        if (cf_def.isSetBlock_size_in_kb()) { newCFMD.blockSizeInKB(cf_def.block_size_in_kb); }
         if (cf_def.isSetCompaction_strategy())
         {
             try
@@ -904,6 +918,7 @@ public final class CFMetaData
         def.setMerge_shards_chance(cfm.mergeShardsChance);
         def.setKey_alias(cfm.getKeyName());
         def.setCompression(cfm.compression);
+        def.setBlock_size_in_kb(cfm.blockSizeInKB);
         List<org.apache.cassandra.thrift.ColumnDef> column_meta = new ArrayList< org.apache.cassandra.thrift.ColumnDef>(cfm.column_metadata.size());
         for (ColumnDefinition cd : cfm.column_metadata.values())
         {
@@ -953,6 +968,7 @@ public final class CFMetaData
         def.key_validation_class = cfm.keyValidator.getClass().getName();
         def.key_alias = cfm.keyAlias;
         def.compression = cfm.compression;
+        def.block_size_in_kb = cfm.blockSizeInKB;
         List<org.apache.cassandra.db.migration.avro.ColumnDef> column_meta = new ArrayList<org.apache.cassandra.db.migration.avro.ColumnDef>(cfm.column_metadata.size());
         for (ColumnDefinition cd : cfm.column_metadata.values())
         {
@@ -999,6 +1015,8 @@ public final class CFMetaData
         newDef.merge_shards_chance = def.getMerge_shards_chance();
         newDef.key_alias = def.key_alias;
         newDef.compression = def.compression;
+        newDef.block_size_in_kb = def.getBlock_size_in_kb();
+
         List<org.apache.cassandra.db.migration.avro.ColumnDef> columnMeta = new ArrayList<org.apache.cassandra.db.migration.avro.ColumnDef>();
         if (def.isSetColumn_metadata())
         {
@@ -1134,6 +1152,7 @@ public final class CFMetaData
             .append("mergeShardsChance", mergeShardsChance)
             .append("keyAlias", keyAlias)
             .append("compression", compression)
+            .append("blockSizeInKB", blockSizeInKB)
             .append("column_metadata", column_metadata)
             .append("compactionStrategyClass", compactionStrategyClass)
             .append("compactionStrategyOptions", compactionStrategyOptions)
