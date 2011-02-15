@@ -1055,6 +1055,14 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         }
     }
 
+    /**
+     * Package protected for access from the CompactionManager.
+     */
+    SSTableTracker getSSTableTracker()
+    {
+        return ssTables;
+    }
+
     public Collection<SSTableReader> getSSTables()
     {
         return ssTables.getSSTables();
