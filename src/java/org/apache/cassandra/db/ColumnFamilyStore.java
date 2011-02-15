@@ -1754,7 +1754,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      */
     void clearUnsafe()
     {
-        data.clearUnsafe();
+        data.init();
     }
 
     /**
