@@ -38,7 +38,10 @@ public class SSTableTracker implements Iterable<SSTableReader>
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableTracker.class);
 
+    // set of active sstables
     private volatile Set<SSTableReader> sstables;
+    // set of compacting sstables (subset of the active sstables)
+    private volatile Set<SSTableReader> compacting;
     private final AtomicLong liveSize = new AtomicLong();
     private final AtomicLong totalSize = new AtomicLong();
 
@@ -53,6 +56,7 @@ public class SSTableTracker implements Iterable<SSTableReader>
         this.ksname = ksname;
         this.cfname = cfname;
         sstables = Collections.emptySet();
+        compacting = Collections.emptySet();
         keyCache = new JMXInstrumentedCache<Pair<Descriptor,DecoratedKey>,Long>(ksname, cfname + "KeyCache", 0);
         rowCache = new JMXInstrumentedCache<DecoratedKey, ColumnFamily>(ksname, cfname + "RowCache", 3);
     }
@@ -81,9 +85,13 @@ public class SSTableTracker implements Iterable<SSTableReader>
         return new CacheWriter<DecoratedKey, ColumnFamily>(cfname, rowCache, DatabaseDescriptor.getSerializedRowCachePath(ksname, cfname), function);
     }
 
+    /**
+     * Replaces the given compacting sstables with a new active sstable.
+     */
     public synchronized void replace(Collection<SSTableReader> oldSSTables, Iterable<SSTableReader> replacements)
     {
         Set<SSTableReader> sstablesNew = new HashSet<SSTableReader>(sstables);
+        Set<SSTableReader> compactingNew = new HashSet<SSTableReader>(compacting);
 
         for (SSTableReader sstable : replacements)
         {
@@ -105,6 +113,8 @@ public class SSTableTracker implements Iterable<SSTableReader>
                 logger.debug(String.format("removing %s from list of files tracked for %s.%s",
                                            sstable.descriptor, ksname, cfname));
             boolean removed = sstablesNew.remove(sstable);
+            // TODO: enable an assertion that removed sstables were compacting
+            // boolean removedFromCompacting = compactingNew.remove(sstable);
             assert removed;
             sstable.markCompacted();
             maxDataAge = Math.max(maxDataAge, sstable.maxDataAge);
@@ -112,18 +122,64 @@ public class SSTableTracker implements Iterable<SSTableReader>
         }
 
         sstables = Collections.unmodifiableSet(sstablesNew);
+        compacting = Collections.unmodifiableSet(compacting);
         updateCacheSizes();
     }
 
+    /**
+     * Adds new active sstables.
+     */
     public synchronized void add(Iterable<SSTableReader> sstables)
     {
         assert sstables != null;
         replace(Collections.<SSTableReader>emptyList(), sstables);
     }
 
+    /**
+     * Removes the given compacting sstable.
+     */
     public synchronized void markCompacted(Collection<SSTableReader> compacted)
     {
         replace(compacted, Collections.<SSTableReader>emptyList());
+    }
+
+    /**
+     * @return A subset of the given active sstables that have been marked compacting,
+     * or null if the thresholds cannot be met.
+     */
+    public synchronized Set<SSTableReader> markCompacting(Collection<SSTableReader> tocompact, int min, int max)
+    {
+        Set<SSTableReader> remaining = new HashSet<SSTableReader>(tocompact);
+
+        // find the subset that is active and not already compacting
+        remaining.removeAll(compacting);
+        remaining.retainAll(sstables);
+        if (remaining.size() < min)
+            // cannot meet the min threshold
+            return null;
+
+        // cap the newly compacting items to the set
+        HashSet<SSTableReader> toadd = new HashSet<SSTableReader>();
+        Iterator<SSTableReader> iter = remaining.iterator();
+        for (int added = 0; added < max && iter.hasNext(); added++)
+            toadd.add(iter.next());
+
+        // and add them
+        Set<SSTableReader> compactingNew = new HashSet<SSTableReader>(compacting);
+        compactingNew.addAll(toadd);
+        compacting = Collections.unmodifiableSet(compactingNew);
+        return toadd;
+    }
+
+    /**
+     * Removes the given sstables from compacting status, without checking that they
+     * are in compacting status: intended for use in a finally block.
+     */
+    public synchronized void unmarkCompacting(Collection<SSTableReader> remove)
+    {
+        Set<SSTableReader> compactingNew = new HashSet<SSTableReader>(compacting);
+        compactingNew.removeAll(remove);
+        compacting = Collections.unmodifiableSet(compactingNew);
     }
 
     /**
