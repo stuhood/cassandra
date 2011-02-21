@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,7 @@ public final class SlabAllocator implements Allocator
     final static boolean DEFAULT_DIRECT = false;
 
     private AtomicReference<Slab> curSlab = new AtomicReference<Slab>();
+    private AtomicLong allocated = new AtomicLong(0);
 
     private final boolean direct;
     private final int byteSlabSize;
@@ -72,8 +74,15 @@ public final class SlabAllocator implements Allocator
         return ByteBuffer.allocate(size);
     }
 
+    /** @return The total number of bytes allocated by this Allocator. */
+    public long allocated()
+    {
+        return allocated.get();
+    }
+
     public ByteBuffer allocate(int size)
     {
+        allocated.addAndGet(size);
         if (size > sizeThresholdBytes)
             return allocate(direct, size);
         

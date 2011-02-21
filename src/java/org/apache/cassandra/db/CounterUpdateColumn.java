@@ -21,7 +21,9 @@ package org.apache.cassandra.db;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.context.CounterContext;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.InternPool;
 
 /**
  * A counter update while it hasn't been applied yet by the leader replica.
@@ -78,10 +80,10 @@ public class CounterUpdateColumn extends Column
     }
 
     @Override
-    public CounterColumn localCopy(ColumnFamilyStore cfs)
+    public CounterColumn localCopy(InternPool pool, Allocator allocator)
     {
-        return new CounterColumn(cfs.internOrCopy(name),
-                                 CounterContext.instance().create(delta()),
+        return new CounterColumn(pool.internOrTrim(name, allocator),
+                                 CounterContext.instance().create(delta(), allocator),
                                  timestamp(),
                                  Long.MIN_VALUE);
     }

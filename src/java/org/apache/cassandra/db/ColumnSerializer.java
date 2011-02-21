@@ -79,7 +79,7 @@ public class ColumnSerializer implements IColumnSerializer
         if (name.remaining() <= 0)
             throw new CorruptColumnException("invalid column name length " + name.remaining());
         if (interner != null)
-            name = interner.maybeIntern(name);
+            name = interner.getNamesInternPool().maybeIntern(name);
 
         int b = dis.readUnsignedByte();
         if ((b & COUNTER_MASK) != 0)

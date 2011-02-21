@@ -44,6 +44,8 @@ import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
+import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.SlabAllocator;
 import org.apache.cassandra.utils.WrappedRunnable;
 
 public class Memtable implements Comparable<Memtable>, IFlushable
@@ -52,7 +54,6 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private boolean isFrozen;
 
-    private final AtomicInteger currentThroughput = new AtomicInteger(0);
     private final AtomicInteger currentOperations = new AtomicInteger(0);
 
     private final long creationTime;
@@ -62,13 +63,20 @@ public class Memtable implements Comparable<Memtable>, IFlushable
     private final int THRESHOLD;
     private final int THRESHOLD_COUNT;
 
+    private final SlabAllocator allocator;
+
     public Memtable(ColumnFamilyStore cfs)
     {
-
         this.cfs = cfs;
         creationTime = System.currentTimeMillis();
         this.THRESHOLD = cfs.getMemtableThroughputInMB() * 1024 * 1024;
         this.THRESHOLD_COUNT = (int) (cfs.getMemtableOperationsInMillions() * 1024 * 1024);
+        this.allocator = new SlabAllocator();
+    }
+
+    public Allocator getAllocator()
+    {
+        return allocator;
     }
 
     /**
@@ -88,9 +96,9 @@ public class Memtable implements Comparable<Memtable>, IFlushable
     		return 0;
     }
 
-    public int getCurrentThroughput()
+    public long getCurrentThroughput()
     {
-        return currentThroughput.get();
+        return allocator.allocated();
     }
     
     public int getCurrentOperations()
@@ -100,7 +108,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     boolean isThresholdViolated()
     {
-        return currentThroughput.get() >= this.THRESHOLD || currentOperations.get() >= this.THRESHOLD_COUNT;
+        return allocator.allocated() >= this.THRESHOLD || currentOperations.get() >= this.THRESHOLD_COUNT;
     }
 
     boolean isFrozen()
@@ -126,7 +134,6 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private void resolve(DecoratedKey key, ColumnFamily cf)
     {
-        currentThroughput.addAndGet(cf.size());
         currentOperations.addAndGet(cf.getColumnCount());
 
         ColumnFamily oldCf = columnFamilies.putIfAbsent(key, cf);
@@ -191,7 +198,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
     public String toString()
     {
         return String.format("Memtable-%s@%s(%s bytes, %s operations)",
-                             cfs.getColumnFamilyName(), hashCode(), currentThroughput, currentOperations);
+                             cfs.getColumnFamilyName(), hashCode(), allocator.allocated(), currentOperations);
     }
 
     /**

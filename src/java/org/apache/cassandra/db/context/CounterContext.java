@@ -25,6 +25,8 @@ import java.util.*;
 import org.apache.commons.lang.ArrayUtils;
 
 import org.apache.cassandra.db.DBConstants;
+import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.HeapAllocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -82,7 +84,12 @@ public class CounterContext implements IContext
      */
     public ByteBuffer create(long value)
     {
-        ByteBuffer context = ByteBuffer.allocate(stepLength);
+        return create(value, HeapAllocator.instance);
+    }
+
+    public ByteBuffer create(long value, Allocator allocator)
+    {
+        ByteBuffer context = allocator.allocate(stepLength);
         writeElementAtOffset(context, 0, localId, 1L, value);
         return context;
     }

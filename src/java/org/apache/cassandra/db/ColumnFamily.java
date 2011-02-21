@@ -40,7 +40,10 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.ICompactSerializer2;
 import org.apache.cassandra.io.util.IIterableColumns;
+import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.InternPool;
 
 public class ColumnFamily implements IColumnContainer, IIterableColumns
 {
@@ -108,6 +111,18 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     {
         ColumnFamily cf = cloneMeShallow();
         cf.columns = columns.clone();
+        return cf;
+    }
+
+    /**
+     * Creates a deep copy of this ColumnFamily with the given column name pool and allocator.
+     */
+    public ColumnFamily localCopy(InternPool pool, Allocator allocator)
+    {
+        ColumnFamily cf = cloneMeShallow();
+        for (Map.Entry<ByteBuffer, IColumn> ce : columns.entrySet())
+            // TODO: adding in sorted order to CSLM is slow
+            cf.addColumn(ce.getValue().localCopy(pool, allocator));
         return cf;
     }
 

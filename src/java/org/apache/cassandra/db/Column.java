@@ -28,8 +28,9 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
-
+import org.apache.cassandra.utils.InternPool;
 
 /**
  * Column is immutable, which prevents all kinds of confusion in a multithreaded environment.
@@ -215,9 +216,9 @@ public class Column implements IColumn
         return result;
     }
 
-    public IColumn localCopy(ColumnFamilyStore cfs)
+    public IColumn localCopy(InternPool pool, Allocator allocator)
     {
-        return new Column(cfs.internOrCopy(name), ByteBufferUtil.clone(value), timestamp);
+        return new Column(pool.internOrTrim(name, allocator), ByteBufferUtil.trim(value, allocator), timestamp);
     }
     
     public String getString(AbstractType comparator)

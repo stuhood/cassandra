@@ -38,8 +38,10 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.ICompactSerializer;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.InternPool;
 import org.apache.cassandra.thrift.ConsistencyLevel;
 
 public class CounterMutation implements IMutation
@@ -175,7 +177,8 @@ public class CounterMutation implements IMutation
             ColumnFamilyStore cfs = table.getColumnFamilyStore(cf.id());
             for (IColumn column : cf_.getColumnsMap().values())
             {
-                cf.addColumn(column.localCopy(cfs));
+                // FIXME: this should not be necessary anymore: CFStore.apply clones
+                cf.addColumn(column.localCopy(cfs.getNamesInternPool(), org.apache.cassandra.utils.HeapAllocator.instance));
             }
             rm.add(cf);
         }

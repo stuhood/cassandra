@@ -23,7 +23,9 @@ import java.nio.ByteBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.InternPool;
 
 public class DeletedColumn extends Column
 {
@@ -66,9 +68,9 @@ public class DeletedColumn extends Column
     }
     
     @Override
-    public IColumn localCopy(ColumnFamilyStore cfs)
+    public IColumn localCopy(InternPool pool, Allocator allocator)
     {
-        return new DeletedColumn(cfs.internOrCopy(name), ByteBufferUtil.clone(value), timestamp);
+        return new DeletedColumn(pool.internOrTrim(name, allocator), ByteBufferUtil.trim(value, allocator), timestamp);
     }
 
     @Override

@@ -36,9 +36,10 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.ColumnSortedMap;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-
+import org.apache.cassandra.utils.InternPool;
 
 public class SuperColumn implements IColumn, IColumnContainer
 {
@@ -295,26 +296,18 @@ public class SuperColumn implements IColumn, IColumnContainer
         this.localDeletionTime.set(localDeleteTime);
         this.markedForDeleteAt.set(timestamp);
     }
-
-    public IColumn shallowCopy()
-    {
-        SuperColumn sc = new SuperColumn(ByteBufferUtil.clone(name_), this.getComparator());
-        sc.localDeletionTime = localDeletionTime;
-        sc.markedForDeleteAt = markedForDeleteAt;
-        return sc;
-    }
     
-    public IColumn localCopy(ColumnFamilyStore cfs)
+    public IColumn localCopy(InternPool pool, Allocator allocator)
     {
         // we don't try to intern supercolumn names, because if we're using Cassandra correctly it's almost
         // certainly just going to pollute our interning map with unique, dynamic values
-        SuperColumn sc = new SuperColumn(ByteBufferUtil.clone(name_), this.getComparator());
+        SuperColumn sc = new SuperColumn(ByteBufferUtil.trim(name_, allocator), this.getComparator());
         sc.localDeletionTime = localDeletionTime;
         sc.markedForDeleteAt = markedForDeleteAt;
         
         for(Map.Entry<ByteBuffer, IColumn> c : columns_.entrySet())
         {
-            sc.addColumn(c.getValue().localCopy(cfs));
+            sc.addColumn(c.getValue().localCopy(pool, allocator));
         }
 
         return sc;

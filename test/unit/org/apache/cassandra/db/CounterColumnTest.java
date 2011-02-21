@@ -39,6 +39,7 @@ import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.HeapAllocator;
 
 public class CounterColumnTest extends SchemaLoader
 {
@@ -68,7 +69,8 @@ public class CounterColumnTest extends SchemaLoader
             ByteBufferUtil.bytes("x"),
             ByteBufferUtil.bytes(delta),
             1L);
-        CounterColumn column = cuc.localCopy(Table.open("Keyspace5").getColumnFamilyStore("Counter1"));
+        ColumnFamilyStore cfs = Table.open("Keyspace5").getColumnFamilyStore("Counter1");
+        CounterColumn column = cuc.localCopy(cfs.getNamesInternPool(), HeapAllocator.instance);
 
         assert delta == column.total();
         assert Arrays.equals(FBUtilities.getLocalAddress().getAddress(), ArrayUtils.subarray(column.value().array(), 0, idLength));

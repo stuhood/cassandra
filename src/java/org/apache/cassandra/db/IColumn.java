@@ -23,7 +23,10 @@ import java.security.MessageDigest;
 import java.util.Collection;
 
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.InternPool;
 
 public interface IColumn
 {
@@ -49,7 +52,7 @@ public interface IColumn
 
     /** clones the column, interning column names and making copies of other underlying byte buffers
      * @param cfs*/
-    IColumn localCopy(ColumnFamilyStore cfs);
+    IColumn localCopy(InternPool pool, Allocator allocator);
 
     /**
      * For a simple column, live == !isMarkedForDelete.

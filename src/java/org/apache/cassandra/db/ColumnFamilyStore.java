@@ -800,16 +800,30 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
      */
     Memtable apply(DecoratedKey key, ColumnFamily columnFamily)
     {
+        // grab a stable reference to the current memtable
+        Memtable mt = memtable;
+
         long start = System.nanoTime();
 
-        boolean flushRequested = memtable.isThresholdViolated();
-        memtable.put(key, columnFamily);
+        boolean flushRequested = mt.isThresholdViolated();
         ColumnFamily cachedRow = getRawCachedRow(key);
         if (cachedRow != null)
+        {
+            // going straight to cache: allocate outside of the memtable slabs
+            columnFamily = columnFamily.localCopy(getNamesInternPool(), HeapAllocator.instance);
             cachedRow.addAll(columnFamily);
+        }
+        else
+        {
+            // allocate in the memtable slabs
+            columnFamily = columnFamily.localCopy(getNamesInternPool(), mt.getAllocator());
+        }
+        // clone the key in the slabs
+        key = partitioner.decorateKey(ByteBufferUtil.clone(key.key, mt.getAllocator()));
+        mt.put(key, columnFamily);
         writeStats.addNano(System.nanoTime() - start);
         
-        return flushRequested ? memtable : null;
+        return flushRequested ? mt : null;
     }
 
     /*
@@ -1026,7 +1040,8 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public int getMemtableDataSize()
     {
-        return getMemtableThreadSafe().getCurrentThroughput();
+        long val = getMemtableThreadSafe().getCurrentThroughput();
+        return (int)Math.min(Integer.MAX_VALUE, val);
     }
 
     public int getMemtableSwitchCount()
@@ -1163,12 +1178,13 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             if (cached == null)
                 return null;
 
-            // make a deep copy of column data so we don't keep references to direct buffers, which
-            // would prevent munmap post-compaction.
+            // make a deep copy of column data so we don't keep references to direct
+            // or slab buffers, which would prevent munmap post-compaction
+            // TODO: avoid copying for non-slab, non-direct buffers
             for (IColumn column : cached.getSortedColumns())
             {
                 cached.remove(column.name());
-                cached.addColumn(column.localCopy(this));
+                cached.addColumn(column.localCopy(getNamesInternPool(), HeapAllocator.instance));
             }
 
             // avoid keeping a permanent reference to the original key buffer

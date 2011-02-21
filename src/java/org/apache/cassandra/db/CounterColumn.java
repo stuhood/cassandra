@@ -28,8 +28,10 @@ import org.apache.log4j.Logger;
 import org.apache.cassandra.db.context.CounterContext;
 import org.apache.cassandra.db.context.IContext.ContextRelationship;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.InternPool;
 
 /**
  * A column that represents a partitioned counter.
@@ -154,9 +156,12 @@ public class CounterColumn extends Column
     }
 
     @Override
-    public IColumn localCopy(ColumnFamilyStore cfs)
+    public IColumn localCopy(InternPool pool, Allocator allocator)
     {
-        return new CounterColumn(cfs.internOrCopy(name), ByteBufferUtil.clone(value), timestamp, timestampOfLastDelete);
+        return new CounterColumn(pool.internOrTrim(name, allocator),
+                                 ByteBufferUtil.trim(value, allocator),
+                                 timestamp,
+                                 timestampOfLastDelete);
     }
 
     @Override
