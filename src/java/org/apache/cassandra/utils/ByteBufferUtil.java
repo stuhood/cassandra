@@ -197,25 +197,26 @@ public class ByteBufferUtil
     
     public static ByteBuffer clone(ByteBuffer o)
     {
-        assert o != null;
-        
+        return clone(o, HeapAllocator.instance);
+    }
+
+    public static ByteBuffer clone(ByteBuffer o, Allocator allocator)
+    {
         if (o.remaining() == 0)
             return EMPTY_BYTE_BUFFER;
           
-        ByteBuffer clone = ByteBuffer.allocate(o.remaining());
-
-        if (o.hasArray())
-        {
-            System.arraycopy(o.array(), o.arrayOffset() + o.position(), clone.array(), 0, o.remaining());
-        }
-        else
-        {
-            for (int i = o.position(); i < o.limit(); i++)
-                clone.put(o.get(i));
-            clone.flip();
-        }
-
+        ByteBuffer clone = allocator.allocate(o.remaining());
+        assert clone.remaining() == o.remaining();
+        arrayCopy(o, o.position(), clone, clone.position(), o.remaining());
         return clone;
+    }
+
+    /** @return Clones the given ByteBuffer if capacity() != remaining() or if it is direct. */
+    public static ByteBuffer trim(ByteBuffer o, Allocator allocator)
+    {
+        if (o.isDirect() || o.capacity() != o.remaining())
+            return clone(o, allocator);
+        return o;
     }
 
     public static void arrayCopy(ByteBuffer buffer, int position, byte[] bytes, int offset, int length)
