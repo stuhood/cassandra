@@ -280,7 +280,7 @@ public class FBUtilities
             messageDigest.reset();
             for(ByteBuffer block : data)
             {
-                messageDigest.update(ByteBufferUtil.clone(block));
+                messageDigest.update(block.slice());
             }
 
             result = messageDigest.digest();

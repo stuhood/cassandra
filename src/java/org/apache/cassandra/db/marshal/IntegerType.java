@@ -22,7 +22,7 @@ package org.apache.cassandra.db.marshal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 
-import org.apache.thrift.TBaseHelper;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 public final class IntegerType extends AbstractType
 {
@@ -122,7 +122,7 @@ public final class IntegerType extends AbstractType
         if (bytes.remaining() == 0)
             return "empty";
 
-        return new java.math.BigInteger(TBaseHelper.byteBufferToByteArray(bytes)).toString(10);
+        return new java.math.BigInteger(ByteBufferUtil.getArray(bytes)).toString(10);
     }
 
     public ByteBuffer fromString(String source)

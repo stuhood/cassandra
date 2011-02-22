@@ -98,7 +98,7 @@ public class CounterContext implements IContext
     // write a tuple (node id, clock, count) at offset
     protected static void writeElementAtOffset(ByteBuffer context, int offset, byte[] id, long clock, long count)
     {
-        System.arraycopy(id, 0, context.array(), offset + context.arrayOffset(), idLength);
+        ByteBufferUtil.arrayCopy(id, 0, context, offset, idLength);
         context.putLong(offset + idLength, clock);
         context.putLong(offset + idLength + clockLength, count);
     }
@@ -367,9 +367,9 @@ public class CounterContext implements IContext
             sb.append("{");
             try
             {
-                int absOffset = context.arrayOffset() + offset;
-                InetAddress address = InetAddress.getByAddress(
-                            ArrayUtils.subarray(context.array(), absOffset, absOffset + idLength));
+                byte[] addrBytes = new byte[idLength];
+                ByteBufferUtil.arrayCopy(context, offset, addrBytes, 0, idLength);
+                InetAddress address = InetAddress.getByAddress(addrBytes);
                 sb.append(address.getHostAddress());
             }
             catch (UnknownHostException uhe)

@@ -136,10 +136,11 @@ public class ByteBufferUtil
     {
         if (b.hasArray())
         {
-            if (b.arrayOffset() == 0 && start == 0 && length == b.array().length)
+            int boff = b.arrayOffset() + start;
+            if (boff == 0 && length == b.array().length)
                 return b.array();
             else
-                return Arrays.copyOfRange(b.array(), start + b.arrayOffset(), start + length + b.arrayOffset());
+                return Arrays.copyOfRange(b.array(), boff, boff + length);
         }
 
         byte[] bytes = new byte[length];
@@ -224,14 +225,22 @@ public class ByteBufferUtil
         if (buffer.hasArray())
         {
             System.arraycopy(buffer.array(), buffer.arrayOffset() + position, bytes, offset, length);
+            return;
         }
-        else
+        for (int i = 0; i < length; i++)
+            bytes[offset++] = buffer.get(position++);
+    }
+
+    public static void arrayCopy(byte[] bytes, int offset, ByteBuffer buffer, int position, int length)
+    {
+        if (buffer.hasArray())
         {
-            for (int i = 0; i < length; i++)
-            {
-                bytes[offset++] = buffer.get(position++);
-            }
+            System.arraycopy(bytes, offset, buffer.array(), buffer.arrayOffset() + position, length);
+            return;
         }
+        for (int i = 0; i < length; i++)
+            // TODO: ByteBuffer.put is polymorphic, and might be slow here
+            buffer.put(position++, bytes[offset++]);
     }
 
     /**
@@ -260,9 +269,8 @@ public class ByteBufferUtil
                 throw new IndexOutOfBoundsException();
 
             for (int i = 0; i < length; i++)
-            {
+                // TODO: ByteBuffer.put is polymorphic, and might be slow here
                 dst.put(dstPos++, src.get(srcPos++));
-            }
         }
     }
 
