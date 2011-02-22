@@ -55,7 +55,6 @@ import org.apache.cassandra.thrift.IndexClause;
 import org.apache.cassandra.thrift.IndexExpression;
 import org.apache.cassandra.thrift.IndexOperator;
 import org.apache.cassandra.utils.*;
-import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 {
@@ -127,8 +126,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public final CFMetaData metadata;
 
-    private static final int INTERN_CUTOFF = 256;
-    public final ConcurrentMap<ByteBuffer, ByteBuffer> internedNames = new NonBlockingHashMap<ByteBuffer, ByteBuffer>();
+    private final InternPool internedNames = new InternPool(256);
 
     /* These are locally held copies to be changed from the config during runtime */
     private volatile DefaultInteger minCompactionThreshold;
@@ -1057,6 +1055,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         {
             Table.flusherLock.readLock().unlock();
         }
+    }
+
+    /** @return The InternPool for column names for the current Memtable. */
+    InternPool getNamesInternPool()
+    {
+        return internedNames;
     }
 
     public Collection<SSTableReader> getSSTables()
@@ -2121,34 +2125,5 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                                       columnFamily, ssTables.getKeyCache().getCapacity(), newCapacity));
             ssTables.getKeyCache().setCapacity(newCapacity);
         }
-    }
-
-    private ByteBuffer intern(ByteBuffer name)
-    {
-        ByteBuffer internedName = internedNames.get(name);
-        if (internedName == null)
-        {
-            internedName = ByteBufferUtil.clone(name);
-            ByteBuffer concurrentName = internedNames.putIfAbsent(internedName, internedName);
-            if (concurrentName != null)
-                internedName = concurrentName;
-        }
-        return internedName;
-    }
-
-    public ByteBuffer internOrCopy(ByteBuffer name)
-    {
-        if (internedNames.size() >= INTERN_CUTOFF)
-            return ByteBufferUtil.clone(name);
-
-        return intern(name);
-    }
-
-    public ByteBuffer maybeIntern(ByteBuffer name)
-    {
-        if (internedNames.size() >= INTERN_CUTOFF)
-            return name;
-
-        return intern(name);
     }
 }
