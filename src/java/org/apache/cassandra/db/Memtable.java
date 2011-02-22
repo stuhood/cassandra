@@ -36,6 +36,7 @@ import com.google.common.collect.PeekingIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.SimpleAbstractColumnIterator;
 import org.apache.cassandra.db.filter.AbstractColumnIterator;
@@ -71,7 +72,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         creationTime = System.currentTimeMillis();
         this.THRESHOLD = cfs.getMemtableThroughputInMB() * 1024 * 1024;
         this.THRESHOLD_COUNT = (int) (cfs.getMemtableOperationsInMillions() * 1024 * 1024);
-        this.allocator = new SlabAllocator();
+        this.allocator = new SlabAllocator(DatabaseDescriptor.useOffheapMemtables());
     }
 
     public Allocator getAllocator()

@@ -36,7 +36,6 @@ public final class SlabAllocator implements Allocator
     private static final Logger logger = LoggerFactory.getLogger(SlabAllocator.class);
 
     final static int DEFAULT_SLAB_BYTES = 2048 * 1024;
-    final static boolean DEFAULT_DIRECT = false;
 
     private AtomicReference<Slab> curSlab = new AtomicReference<Slab>();
     private AtomicLong allocated = new AtomicLong(0);
@@ -46,7 +45,7 @@ public final class SlabAllocator implements Allocator
     // allocs bigger than this don't go through allocator
     private final int sizeThresholdBytes;
 
-    public SlabAllocator()
+    public SlabAllocator(boolean direct)
     {
         this(direct, DEFAULT_SLAB_BYTES);
     }

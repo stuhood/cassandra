@@ -55,6 +55,7 @@ public class Config
     public Integer concurrent_reads = 8;
     public Integer concurrent_writes = 32;
     public Integer concurrent_replicates = 32;
+    public Boolean offheap_memtables = false;
     
     public Integer memtable_flush_writers = null; // will get set to the length of data dirs in DatabaseDescriptor
     

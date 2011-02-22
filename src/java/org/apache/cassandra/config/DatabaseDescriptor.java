@@ -878,6 +878,11 @@ public class DatabaseDescriptor
         return conf.concurrent_replicates;
     }
 
+    public static boolean useOffheapMemtables()
+    {
+        return conf.offheap_memtables;
+    }
+
     public static int getFlushWriters()
     {
             return conf.memtable_flush_writers;
