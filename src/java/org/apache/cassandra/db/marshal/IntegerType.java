@@ -23,7 +23,6 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.thrift.TBaseHelper;
 
 public final class IntegerType extends AbstractType<BigInteger>
 {

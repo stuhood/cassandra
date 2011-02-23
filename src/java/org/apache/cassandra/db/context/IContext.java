@@ -19,6 +19,8 @@ package org.apache.cassandra.db.context;
 
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.utils.Allocator;
+
 /**
  * An opaque commutative context.
  *
@@ -57,8 +59,10 @@ public interface IContext
      *            context.
      * @param right
      *            context.
+     * @param allocator
+     *            an allocator to allocate the new context from.
      */
-    public ByteBuffer merge(ByteBuffer left, ByteBuffer right);
+    public ByteBuffer merge(ByteBuffer left, ByteBuffer right, Allocator allocator);
 
     /**
      * Human-readable String from context.

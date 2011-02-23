@@ -23,6 +23,7 @@ import java.util.*;
 
 import org.apache.cassandra.db.DBConstants;
 import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.HeapAllocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.NodeId;
 
@@ -81,7 +82,7 @@ public class CounterContext implements IContext
     }
 
     /**
-     * Creates an initial counter context with an initial value for the local node with.
+     * Creates an initial counter context with an initial value for the local node.
      *
      *
      * @param value the value for this initial update
@@ -93,9 +94,9 @@ public class CounterContext implements IContext
     {
         ByteBuffer context = allocator.allocate(HEADER_SIZE_LENGTH + HEADER_ELT_LENGTH + STEP_LENGTH);
         // The first (and only) elt is a delta
-        context.putShort(0, (short)1);
-        context.putShort(HEADER_SIZE_LENGTH, (short)0);
-        writeElementAtOffset(context, HEADER_SIZE_LENGTH + HEADER_ELT_LENGTH, NodeId.getLocalId(), 1L, value);
+        context.putShort(context.position(), (short)1);
+        context.putShort(context.position() + HEADER_SIZE_LENGTH, (short)0);
+        writeElementAtOffset(context, context.position() + HEADER_SIZE_LENGTH + HEADER_ELT_LENGTH, NodeId.getLocalId(), 1L, value);
         return context;
     }
 
@@ -103,21 +104,23 @@ public class CounterContext implements IContext
     public ByteBuffer create(NodeId id, long clock, long value, boolean isDelta)
     {
         ByteBuffer context = ByteBuffer.allocate(HEADER_SIZE_LENGTH + (isDelta ? HEADER_ELT_LENGTH : 0) + STEP_LENGTH);
-        context.putShort(0, (short)(isDelta ? 1 : 0));
+        context.putShort(context.position(), (short)(isDelta ? 1 : 0));
         if (isDelta)
         {
-            context.putShort(HEADER_SIZE_LENGTH, (short)0);
+            context.putShort(context.position() + HEADER_SIZE_LENGTH, (short)0);
         }
-        writeElementAtOffset(context, HEADER_SIZE_LENGTH + (isDelta ? HEADER_ELT_LENGTH : 0), id, clock, value);
+        writeElementAtOffset(context, context.position() + HEADER_SIZE_LENGTH + (isDelta ? HEADER_ELT_LENGTH : 0), id, clock, value);
         return context;
     }
 
-    // write a tuple (node id, clock, count) at offset
+    // write a tuple (node id, clock, count) at an absolute (bytebuffer-wise) offset
     private static void writeElementAtOffset(ByteBuffer context, int offset, NodeId id, long clock, long count)
     {
-        ByteBufferUtil.arrayCopy(id.bytes(), id.bytes().position(), context, offset, NodeId.LENGTH);
-        context.putLong(offset + NodeId.LENGTH, clock);
-        context.putLong(offset + NodeId.LENGTH + CLOCK_LENGTH, count);
+        context = context.duplicate();
+        context.position(offset);
+        context.put(id.bytes().duplicate());
+        context.putLong(clock);
+        context.putLong(count);
     }
 
     private static int headerLength(ByteBuffer context)
@@ -275,7 +278,7 @@ public class CounterContext implements IContext
      * @param left counter context.
      * @param right counter context.
      */
-    public ByteBuffer merge(ByteBuffer left, ByteBuffer right)
+    public ByteBuffer merge(ByteBuffer left, ByteBuffer right, Allocator allocator)
     {
         ContextState leftState = new ContextState(left, headerLength(left));
         ContextState rightState = new ContextState(right, headerLength(right));
@@ -537,7 +540,7 @@ public class CounterContext implements IContext
                     // Found someone to merge it to
                     int nbDelta = foundState.isDelta() ? 1 : 0;
                     nbDelta += state.isDelta() ? 1 : 0;
-                    ContextState merger = ContextState.allocate(2, nbDelta);
+                    ContextState merger = ContextState.allocate(2, nbDelta, HeapAllocator.instance);
 
                     long fclock = foundState.getClock();
                     long fcount = foundState.getCount();
@@ -761,10 +764,15 @@ public class CounterContext implements IContext
          */
         public static ContextState allocate(int elementCount, int deltaCount)
         {
+            return allocate(elementCount, deltaCount, HeapAllocator.instance);
+        }
+
+        public static ContextState allocate(int elementCount, int deltaCount, Allocator allocator)
+        {
             assert deltaCount <= elementCount;
             int hlength = HEADER_SIZE_LENGTH + deltaCount * HEADER_ELT_LENGTH;
-            ByteBuffer context = ByteBuffer.allocate(hlength + elementCount * STEP_LENGTH);
-            context.putShort(0, (short)deltaCount);
+            ByteBuffer context = allocator.allocate(hlength + elementCount * STEP_LENGTH);
+            context.putShort(context.position(), (short)deltaCount);
             return new ContextState(context, hlength);
         }
     }

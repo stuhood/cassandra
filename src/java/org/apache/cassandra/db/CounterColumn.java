@@ -156,7 +156,8 @@ public class CounterColumn extends Column
         // live + live: merge clocks; update value
         return new CounterColumn(
             name(),
-            contextManager.merge(value(), column.value()),
+            // FIXME: this is probably wrong: reconcile will be called for memtable resolution
+            contextManager.merge(value(), column.value(), HeapAllocator.instance),
             Math.max(timestamp(), column.timestamp()),
             Math.max(timestampOfLastDelete(), ((CounterColumn)column).timestampOfLastDelete()));
     }
