@@ -102,7 +102,7 @@ public class CounterContext implements IContext
         return context;
     }
 
-    // write a tuple (node id, clock, count) at offset
+    // write a tuple (node id, clock, count) at an absolute offset in the context
     protected static void writeElementAtOffset(ByteBuffer context, int offset, byte[] id, long clock, long count)
     {
         ByteBufferUtil.arrayCopy(id, 0, context, offset, idLength);
