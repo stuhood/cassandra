@@ -26,6 +26,8 @@ import java.util.List;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.HeapAllocator;
 
 /**
  * Two approaches to building an IndexSummary:
@@ -58,7 +60,9 @@ public class IndexSummary
 
     public void addEntry(DecoratedKey decoratedKey, long indexPosition)
     {
-        indexPositions.add(new KeyPosition(decoratedKey, indexPosition));
+        // take ownership of this key by trimming it
+        DecoratedKey key = decoratedKey.trim(HeapAllocator.instance);
+        indexPositions.add(new KeyPosition(key, indexPosition));
     }
 
     public void maybeAddEntry(DecoratedKey decoratedKey, long indexPosition)

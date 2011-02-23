@@ -819,7 +819,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             columnFamily = columnFamily.localCopy(getNamesInternPool(), mt.getAllocator());
         }
         // clone the key in the slabs
-        key = partitioner.decorateKey(ByteBufferUtil.clone(key.key, mt.getAllocator()));
+        key = key.trim(mt.getAllocator());
         mt.put(key, columnFamily);
         writeStats.addNano(System.nanoTime() - start);
         
@@ -1188,7 +1188,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             }
 
             // avoid keeping a permanent reference to the original key buffer
-            ssTables.getRowCache().put(new DecoratedKey(key.token, ByteBufferUtil.clone(key.key)), cached);
+            ssTables.getRowCache().put(key.trim(HeapAllocator.instance), cached);
         }
         return cached;
     }

@@ -24,6 +24,7 @@ import java.util.Comparator;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
@@ -76,6 +77,12 @@ public class DecoratedKey<T extends Token> implements Comparable<DecoratedKey>
 
         DecoratedKey other = (DecoratedKey) obj;
         return token.equals(other.token);
+    }
+
+    /** @return A trimmed copy of this key, as defined by ByteBufferUtil.trim() */
+    public DecoratedKey trim(Allocator allocator)
+    {
+        return new DecoratedKey(token, ByteBufferUtil.trim(key, allocator));
     }
 
     public int compareTo(DecoratedKey other)

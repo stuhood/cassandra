@@ -417,9 +417,8 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
 
     public void cacheKey(DecoratedKey key, Long info)
     {
-        // avoid keeping a permanent reference to the original key buffer
-        DecoratedKey copiedKey = new DecoratedKey(key.token, key.key == null ? null : ByteBufferUtil.clone(key.key));
-        keyCache.put(new Pair<Descriptor, DecoratedKey>(descriptor, copiedKey), info);
+        // trim to avoid keeping a permanent reference to the original key buffer
+        keyCache.put(new Pair<Descriptor, DecoratedKey>(descriptor, key.trim(HeapAllocator.instance)), info);
     }
 
     public Long getCachedPosition(DecoratedKey key)
