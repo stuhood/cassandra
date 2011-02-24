@@ -76,7 +76,7 @@ public class CounterContext implements IContext
     }
 
     /**
-     * Creates an initial counter context with an initial value for the local node with.
+     * Creates an initial counter context with an initial value for the local node.
      *
      * @param value the value for this initial update
      *
@@ -90,7 +90,7 @@ public class CounterContext implements IContext
     public ByteBuffer create(long value, Allocator allocator)
     {
         ByteBuffer context = allocator.allocate(stepLength);
-        writeElementAtOffset(context, 0, localId, 1L, value);
+        writeElementAtOffset(context, context.position(), localId, 1L, value);
         return context;
     }
 
@@ -133,7 +133,7 @@ public class CounterContext implements IContext
 
         int leftIndex  = left.position();
         int rightIndex = right.position();
-        while (leftIndex < left.remaining() && rightIndex < right.remaining())
+        while (leftIndex < left.limit() && rightIndex < right.limit())
         {
             // compare id bytes
             int compareId = ByteBufferUtil.compareSubArrays(left, leftIndex, right, rightIndex, idLength);
@@ -227,7 +227,7 @@ public class CounterContext implements IContext
         }
 
         // check final lengths
-        if (leftIndex < left.remaining())
+        if (leftIndex < left.limit())
         {
             if (relationship == ContextRelationship.EQUAL)
             {
@@ -238,7 +238,7 @@ public class CounterContext implements IContext
                 return ContextRelationship.DISJOINT;
             }
         }
-        else if (rightIndex < right.remaining())
+        else if (rightIndex < right.limit())
         {
             if (relationship == ContextRelationship.EQUAL)
             {
