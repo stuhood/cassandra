@@ -329,7 +329,7 @@ public class CounterContextTest
             2L,
             9L);
 
-        ByteBuffer merged = cc.merge(left, right);
+        ByteBuffer merged = cc.merge(left, right, allocator);
 
         assertEquals(5 * stepLength, merged.remaining());
         // local node id's counts are aggregated
@@ -391,7 +391,7 @@ public class CounterContextTest
             9L,
             9L);
 
-        ByteBuffer merged = cc.merge(left, right);
+        ByteBuffer merged = cc.merge(left, right, HeapAllocator.instance);
 
         // 127.0.0.1: 12 (3+9)
         // 0.0.0.1:    1

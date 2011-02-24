@@ -39,6 +39,7 @@ import org.apache.cassandra.io.ICompactSerializer;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.Allocator;
+import org.apache.cassandra.utils.HeapAllocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.InternPool;
@@ -178,7 +179,7 @@ public class CounterMutation implements IMutation
             for (IColumn column : cf_.getColumnsMap().values())
             {
                 // FIXME: this should not be necessary anymore: CFStore.apply clones
-                cf.addColumn(column.localCopy(cfs.getNamesInternPool(), org.apache.cassandra.utils.HeapAllocator.instance));
+                cf.addColumn(column.localCopy(cfs.getNamesInternPool(), HeapAllocator.instance));
             }
             rm.add(cf);
         }

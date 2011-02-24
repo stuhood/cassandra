@@ -30,6 +30,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.HeapAllocator;
 import org.apache.cassandra.utils.InternPool;
 
 /**
@@ -140,6 +141,11 @@ public class Column implements IColumn
 
     public void addColumn(IColumn column)
     {
+        addColumn(null, null);
+    }
+
+    public void addColumn(IColumn column, Allocator allocator)
+    {
         throw new UnsupportedOperationException("This operation is not supported for simple columns.");
     }
 
@@ -176,6 +182,11 @@ public class Column implements IColumn
     }
 
     public IColumn reconcile(IColumn column)
+    {
+        return reconcile(column, HeapAllocator.instance);
+    }
+
+    public IColumn reconcile(IColumn column, Allocator allocator)
     {
         // tombstones take precedence.  (if both are tombstones, then it doesn't matter which one we use.)
         if (isMarkedForDelete())

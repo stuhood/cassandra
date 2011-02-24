@@ -141,7 +141,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         if (oldCf == null)
             return;
 
-        oldCf.resolve(cf);
+        oldCf.resolve(cf, allocator);
     }
 
     // for debugging

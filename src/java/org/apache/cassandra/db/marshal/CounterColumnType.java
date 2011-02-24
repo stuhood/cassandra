@@ -25,6 +25,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.HeapAllocator;
 
 public class CounterColumnType extends AbstractCommutativeType
 {
@@ -95,7 +96,7 @@ public class CounterColumnType extends AbstractCommutativeType
             cc.remove(counterColumn.name());
             //XXX: on "clean," must copy-and-replace
             if (null != cleanedColumn)
-                cc.addColumn(cleanedColumn);
+                cc.addColumn(cleanedColumn, HeapAllocator.instance);
         }
     }
 

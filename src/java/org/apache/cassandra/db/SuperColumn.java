@@ -39,6 +39,7 @@ import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.HeapAllocator;
 import org.apache.cassandra.utils.InternPool;
 
 public class SuperColumn implements IColumn, IColumnContainer
@@ -170,19 +171,24 @@ public class SuperColumn implements IColumn, IColumnContainer
 
     public void addColumn(IColumn column)
     {
+        addColumn(column, HeapAllocator.instance);
+    }
+
+    public void addColumn(IColumn column, Allocator allocator)
+    {
         assert column instanceof Column : "A super column can only contain simple columns";
 
         ByteBuffer name = column.name();
         IColumn oldColumn = columns_.putIfAbsent(name, column);
         if (oldColumn != null)
         {
-            IColumn reconciledColumn = column.reconcile(oldColumn);
+            IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
             while (!columns_.replace(name, oldColumn, reconciledColumn))
             {
                 // if unable to replace, then get updated old (existing) col
                 oldColumn = columns_.get(name);
                 // re-calculate reconciled col from updated old col and original new col
-                reconciledColumn = column.reconcile(oldColumn);
+                reconciledColumn = column.reconcile(oldColumn, allocator);
                 // try to re-update value, again
             }
     	}
@@ -192,13 +198,13 @@ public class SuperColumn implements IColumn, IColumnContainer
      * Go through each sub column if it exists then as it to resolve itself
      * if the column does not exist then create it.
      */
-    public void putColumn(IColumn column)
+    public void putColumn(IColumn column, Allocator allocator)
     {
         assert column instanceof SuperColumn;
 
         for (IColumn subColumn : column.getSubColumns())
         {
-        	addColumn(subColumn);
+        	addColumn(subColumn, allocator);
         }
         FBUtilities.atomicSetMax(localDeletionTime, column.getLocalDeletionTime()); // do this first so we won't have a column that's "deleted" but has no local deletion time
         FBUtilities.atomicSetMax(markedForDeleteAt, column.getMarkedForDeleteAt());
@@ -314,6 +320,11 @@ public class SuperColumn implements IColumn, IColumnContainer
     }
 
     public IColumn reconcile(IColumn c)
+    {
+        return reconcile(null, null);
+    }
+
+    public IColumn reconcile(IColumn c, Allocator allocator)
     {
         throw new UnsupportedOperationException("This operation is unsupported on super columns.");
     }

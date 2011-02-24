@@ -256,12 +256,14 @@ public class CounterContext implements IContext
     /**
      * Return a context w/ an aggregated count for each node id.
      *
+     * @param allocator
+     *            An allocator for the merged value.
      * @param left
      *            counter context.
      * @param right
      *            counter context.
      */
-    public ByteBuffer merge(ByteBuffer left, ByteBuffer right)
+    public ByteBuffer merge(ByteBuffer left, ByteBuffer right, Allocator allocator)
     {
         // Compute size of result
         int size = 0;
@@ -290,7 +292,7 @@ public class CounterContext implements IContext
         size += (left.limit() - leftOffset)  / stepLength;
         size += (right.limit() - rightOffset) / stepLength;
 
-        ByteBuffer merged = ByteBuffer.allocate(size * stepLength);
+        ByteBuffer merged = allocator.allocate(size * stepLength);
 
         // Do the actual merge:
         //   a) local id:  sum clocks, counts
