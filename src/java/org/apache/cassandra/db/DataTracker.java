@@ -157,7 +157,8 @@ public class DataTracker
 
     /**
      * @return A subset of the given active sstables that have been marked compacting,
-     * or null if the thresholds cannot be met: intended for use in a finally block with "unmark".
+     * or null if the thresholds cannot be met: files that are marked compacting must
+     * later be unmarked using unmarkCompacting.
      */
     public Set<SSTableReader> markCompacting(Collection<SSTableReader> tomark, int min, int max)
     {
@@ -191,7 +192,8 @@ public class DataTracker
     }
 
     /**
-     * Removes files from compacting status: intended for use in a finally block with "mark"
+     * Removes files from compacting status: this is different from 'markCompacted'
+     * because it should be run regardless of whether a compaction succeeded.
      */
     public void unmarkCompacting(Collection<SSTableReader> unmark)
     {

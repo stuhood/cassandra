@@ -443,7 +443,6 @@ public class CompactionManager implements CompactionManagerMBean
             table.snapshot("compact-" + cfs.columnFamily);
 
         // sanity check: all sstables must belong to the same cfs
-        logger.info("Compacting [" + StringUtils.join(sstables, ",") + "]");
         for (SSTableReader sstable : sstables)
             assert sstable.descriptor.cfname.equals(cfs.columnFamily);
 
@@ -468,6 +467,8 @@ public class CompactionManager implements CompactionManagerMBean
         // so in our single-threaded compaction world this is a valid way of determining if we're compacting
         // all the sstables (that existed when we started)
         boolean major = cfs.isCompleteSSTables(sstables);
+        String type = major ? "Major" : "Minor";
+        logger.info("Compacting {}: {}", type, sstables);
 
         long startTime = System.currentTimeMillis();
         long totalkeysWritten = 0;
@@ -479,12 +480,11 @@ public class CompactionManager implements CompactionManagerMBean
 
         SSTableWriter writer;
         CompactionController controller = new CompactionController(cfs, sstables, major, gcBefore, false);
-        CompactionIterator ci = new CompactionIterator(sstables, controller); // retain a handle so we can call close()
+        CompactionIterator ci = new CompactionIterator(type, sstables, controller); // retain a handle so we can call close()
         Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
-        executor.beginCompaction(cfs.columnFamily, ci);
-
         Map<DecoratedKey, Long> cachedKeys = new HashMap<DecoratedKey, Long>();
 
+        executor.beginCompaction(ci);
         try
         {
             if (!nni.hasNext())
@@ -519,6 +519,7 @@ public class CompactionManager implements CompactionManagerMBean
         finally
         {
             ci.close();
+            executor.finishCompaction(ci);
         }
 
         SSTableReader ssTable = writer.closeAndOpenReader(getMaxDataAge(sstables));
@@ -584,7 +585,7 @@ public class CompactionManager implements CompactionManagerMBean
             }
 
             SSTableWriter writer = maybeCreateWriter(cfs, compactionFileLocation, expectedBloomFilterSize, null);
-            executor.beginCompaction(cfs.columnFamily, new ScrubInfo(dataFile, sstable));
+            executor.beginCompaction(new ScrubInfo(dataFile, sstable));
             int goodRows = 0, badRows = 0, emptyRows = 0;
 
             while (!dataFile.isEOF())
@@ -767,7 +768,8 @@ public class CompactionManager implements CompactionManagerMBean
 
                 SSTableScanner scanner = sstable.getDirectScanner(CompactionIterator.FILE_BUFFER_SIZE);
                 SortedSet<ByteBuffer> indexedColumns = cfs.getIndexedColumns();
-                executor.beginCompaction(cfs.columnFamily, new CleanupInfo(sstable, scanner));
+                CleanupInfo ci = new CleanupInfo(sstable, scanner);
+                executor.beginCompaction(ci);
                 try
                 {
                     while (scanner.hasNext())
@@ -795,6 +797,7 @@ public class CompactionManager implements CompactionManagerMBean
                 finally
                 {
                     scanner.close();
+                    executor.finishCompaction(ci);
                 }
             }
             finally
@@ -883,7 +886,7 @@ public class CompactionManager implements CompactionManagerMBean
         }
 
         CompactionIterator ci = new ValidationCompactionIterator(cfs, validator.request.range);
-        executor.beginCompaction(cfs.columnFamily, ci);
+        executor.beginCompaction(ci);
         try
         {
             Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
@@ -900,6 +903,7 @@ public class CompactionManager implements CompactionManagerMBean
         finally
         {
             ci.close();
+            executor.finishCompaction(ci);
         }
     }
 
@@ -981,8 +985,15 @@ public class CompactionManager implements CompactionManagerMBean
                 {
                     if (cfs.isInvalid())
                         return;
-                    executor.beginCompaction(cfs.columnFamily, builder);
-                    builder.build();
+                    executor.beginCompaction(builder);
+                    try
+                    {
+                        builder.build();
+                    }
+                    finally
+                    {
+                        executor.finishCompaction(builder);
+                    }
                 }
                 finally
                 {
@@ -1015,8 +1026,15 @@ public class CompactionManager implements CompactionManagerMBean
                 compactionLock.readLock().lock();
                 try
                 {
-                    executor.beginCompaction(desc.cfname, builder);
-                    return builder.build();
+                    executor.beginCompaction(builder);
+                    try
+                    {
+                        return builder.build();
+                    }
+                    finally
+                    {
+                        executor.finishCompaction(builder);
+                    }
                 }
                 finally
                 {
@@ -1033,8 +1051,15 @@ public class CompactionManager implements CompactionManagerMBean
         {
             public void runMayThrow() throws IOException
             {
-                executor.beginCompaction(writer.getColumnFamily(), writer);
-                writer.saveCache();
+                executor.beginCompaction(writer);
+                try
+                {
+                    writer.saveCache();
+                }
+                finally
+                {
+                    executor.finishCompaction(writer);
+                }
             }
         };
         return executor.submit(runnable);
@@ -1049,7 +1074,9 @@ public class CompactionManager implements CompactionManagerMBean
     {
         public ValidationCompactionIterator(ColumnFamilyStore cfs, Range range) throws IOException
         {
-            super(getCollatingIterator(cfs.getSSTables(), range), new CompactionController(cfs, cfs.getSSTables(), true, getDefaultGcBefore(cfs), false));
+            super("Validation",
+                  getCollatingIterator(cfs.getSSTables(), range),
+                  new CompactionController(cfs, cfs.getSSTables(), true, getDefaultGcBefore(cfs), false));
         }
 
         protected static CollatingIterator getCollatingIterator(Iterable<SSTableReader> sstables, Range range) throws IOException
@@ -1060,12 +1087,6 @@ public class CompactionManager implements CompactionManagerMBean
                 iter.addIterator(sstable.getDirectScanner(FILE_BUFFER_SIZE, range));
             }
             return iter;
-        }
-
-        @Override
-        public String getTaskType()
-        {
-            return "Validation";
         }
     }
 
@@ -1096,8 +1117,8 @@ public class CompactionManager implements CompactionManagerMBean
 
     private static class CompactionExecutor extends DebuggableThreadPoolExecutor
     {
-        private volatile String columnFamily;
-        private volatile ICompactionInfo ci;
+        // a synchronized identity set of running tasks to their compaction info
+        private final Set<CompactionInfo.Holder> compactions;
 
         public CompactionExecutor()
         {
@@ -1106,61 +1127,40 @@ public class CompactionManager implements CompactionManagerMBean
                   TimeUnit.SECONDS,
                   new LinkedBlockingQueue<Runnable>(),
                   new NamedThreadFactory("CompactionExecutor", DatabaseDescriptor.getCompactionThreadPriority()));
+            Map<CompactionInfo.Holder, Boolean> cmap = new IdentityHashMap<CompactionInfo.Holder, Boolean>();
+            compactions = Collections.synchronizedSet(Collections.newSetFromMap(cmap));
         }
 
-        @Override
-        public void afterExecute(Runnable r, Throwable t)
+        void beginCompaction(CompactionInfo.Holder ci)
         {
-            super.afterExecute(r, t);
-            columnFamily = null;
-            ci = null;
+            compactions.add(ci);
         }
 
-        void beginCompaction(String columnFamily, ICompactionInfo ci)
+        void finishCompaction(CompactionInfo.Holder ci)
         {
-            this.columnFamily = columnFamily;
-            this.ci = ci;
+            compactions.remove(ci);
         }
 
-        public String getColumnFamilyName()
+        public List<CompactionInfo.Holder> getCompactions()
         {
-            return columnFamily == null ? null : columnFamily;
-        }
-
-        public Long getBytesTotal()
-        {
-            return ci == null ? null : ci.getTotalBytes();
-        }
-
-        public Long getBytesCompleted()
-        {
-            return ci == null ? null : ci.getBytesComplete();
-        }
-
-        public String getType()
-        {
-            return ci == null ? null : ci.getTaskType();
+            return new ArrayList<CompactionInfo.Holder>(compactions);
         }
     }
 
-    public String getColumnFamilyInProgress()
+    public List<CompactionInfo> getCompactions()
     {
-        return executor.getColumnFamilyName();
+        List<CompactionInfo> out = new ArrayList<CompactionInfo>();
+        for (CompactionInfo.Holder ci : executor.getCompactions())
+            out.add(ci.getCompactionInfo());
+        return out;
     }
 
-    public Long getBytesTotalInProgress()
+    public List<String> getCompactionSummary()
     {
-        return executor.getBytesTotal();
-    }
-
-    public Long getBytesCompacted()
-    {
-        return executor.getBytesCompleted();
-    }
-
-    public String getCompactionType()
-    {
-        return executor.getType();
+        List<String> out = new ArrayList<String>();
+        for (CompactionInfo.Holder ci : executor.getCompactions())
+            out.add(ci.getCompactionInfo().toString());
+        return out;
     }
 
     public int getPendingTasks()
@@ -1247,64 +1247,57 @@ public class CompactionManager implements CompactionManagerMBean
         }
     }
 
-    private static class CleanupInfo implements ICompactionInfo
+    private static class CleanupInfo implements CompactionInfo.Holder
     {
         private final SSTableReader sstable;
         private final SSTableScanner scanner;
-
         public CleanupInfo(SSTableReader sstable, SSTableScanner scanner)
         {
             this.sstable = sstable;
             this.scanner = scanner;
         }
-
-        public long getTotalBytes()
+        
+        public CompactionInfo getCompactionInfo()
         {
-            return scanner.getFileLength();
-        }
-
-        public long getBytesComplete()
-        {
-            return scanner.getFilePointer();
-        }
-
-        public String getTaskType()
-        {
-            return "Cleanup of " + sstable.getColumnFamilyName();
+            try
+            {
+                return new CompactionInfo(sstable.descriptor.ksname,
+                                          sstable.descriptor.cfname,
+                                          "Cleanup of " + sstable.getColumnFamilyName(),
+                                          scanner.getFilePointer(),
+                                          scanner.getFileLength());
+            }
+            catch (Exception e)
+            {
+                throw new RuntimeException();
+            }
         }
     }
 
-    private static class ScrubInfo implements ICompactionInfo
+    private static class ScrubInfo implements CompactionInfo.Holder
     {
         private final BufferedRandomAccessFile dataFile;
-        private final SSTableReader sstable;
-
+        private final SSTableReader sstable;        
         public ScrubInfo(BufferedRandomAccessFile dataFile, SSTableReader sstable)
         {
             this.dataFile = dataFile;
             this.sstable = sstable;
         }
-
-        public long getTotalBytes()
+        
+        public CompactionInfo getCompactionInfo()
         {
             try
             {
-                return dataFile.length();
+                return new CompactionInfo(sstable.descriptor.ksname,
+                                          sstable.descriptor.cfname,
+                                          "Scrub " + sstable,
+                                          dataFile.getFilePointer(),
+                                          dataFile.length());
             }
-            catch (IOException e)
+            catch (Exception e)
             {
-                throw new RuntimeException(e);
+                throw new RuntimeException();
             }
-        }
-
-        public long getBytesComplete()
-        {
-            return dataFile.getFilePointer();
-        }
-
-        public String getTaskType()
-        {
-            return "Scrub " + sstable;
         }
     }
 }

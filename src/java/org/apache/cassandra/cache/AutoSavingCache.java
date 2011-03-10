@@ -34,7 +34,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.CompactionManager;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.io.ICompactionInfo;
+import org.apache.cassandra.io.CompactionInfo;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.StorageService;
@@ -75,7 +75,7 @@ public abstract class AutoSavingCache<K, V> extends InstrumentingCache<K, V>
 
     public Writer getWriter()
     {
-        return new Writer();
+        return new Writer(tableName, cfName);
     }
 
     public void scheduleSaving(int savePeriodInSeconds)
@@ -184,22 +184,34 @@ public abstract class AutoSavingCache<K, V> extends InstrumentingCache<K, V>
         }
     }
 
-    public class Writer implements ICompactionInfo
+    public class Writer implements CompactionInfo.Holder
     {
         private final Set<K> keys;
+        private final CompactionInfo info;
         private final long estimatedTotalBytes;
         private long bytesWritten;
 
-        private Writer()
+        private Writer(String ksname, String cfname)
         {
             keys = getKeySet();
-
             long bytes = 0;
             for (K key : keys)
                 bytes += translateKey(key).remaining();
-
             // an approximation -- the keyset can change while saving
             estimatedTotalBytes = bytes;
+            info = new CompactionInfo(ksname,
+                                      cfname,
+                                      "Save " + getCachePath().getName(),
+                                      0,
+                                      estimatedTotalBytes);
+        }
+
+        public CompactionInfo getCompactionInfo()
+        {
+            long bytesWritten = this.bytesWritten;
+            // keyset can change in size, thus totalBytes can too
+            return info.forProgress(bytesWritten,
+                                    Math.max(bytesWritten, estimatedTotalBytes));
         }
 
         public void saveCache() throws IOException
@@ -237,27 +249,6 @@ public abstract class AutoSavingCache<K, V> extends InstrumentingCache<K, V>
                 throw new IOException("Unable to rename " + tmpFile + " to " + path);
             logger.info(String.format("Saved %s (%d items) in %d ms",
                         path.getName(), keys.size(), (System.currentTimeMillis() - start)));
-        }
-
-        public long getTotalBytes()
-        {
-            // keyset can change in size, thus totalBytes can too
-            return Math.max(estimatedTotalBytes, getBytesComplete());
-        }
-
-        public long getBytesComplete()
-        {
-            return bytesWritten;
-        }
-
-        public String getTaskType()
-        {
-            return "Save " + getCachePath().getName();
-        }
-
-        public String getColumnFamily()
-        {
-            return cfName;
         }
     }
 }
