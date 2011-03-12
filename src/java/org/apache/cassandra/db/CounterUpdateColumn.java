@@ -57,7 +57,7 @@ public class CounterUpdateColumn extends Column
     }
 
     @Override
-    public IColumn reconcile(IColumn column)
+    public IColumn reconcile(IColumn column, Allocator allocator)
     {
         // The only time this could happen is if a batchAdd ships two
         // increment for the same column. Hence we simply sums the delta.

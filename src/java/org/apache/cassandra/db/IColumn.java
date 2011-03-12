@@ -26,6 +26,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.FBUtilities;
 
+/** TODO: rename */
 public interface IColumn
 {
     public static final int MAX_NAME_LENGTH = FBUtilities.MAX_UNSIGNED_SHORT;
@@ -42,8 +43,10 @@ public interface IColumn
     public Collection<IColumn> getSubColumns();
     public IColumn getSubColumn(ByteBuffer columnName);
     public void addColumn(IColumn column);
+    public void addColumn(IColumn column, Allocator allocator);
     public IColumn diff(IColumn column);
     public IColumn reconcile(IColumn column);
+    public IColumn reconcile(IColumn column, Allocator allocator);
     public void updateDigest(MessageDigest digest);
     public int getLocalDeletionTime(); // for tombstone GC, so int is sufficient granularity
     public String getString(AbstractType comparator);

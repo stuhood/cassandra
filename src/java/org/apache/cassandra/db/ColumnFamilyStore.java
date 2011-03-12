@@ -708,7 +708,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         mt.put(key, columnFamily);
         ColumnFamily cachedRow = getRawCachedRow(key);
         if (cachedRow != null)
-            cachedRow.addAll(columnFamily);
+            cachedRow.addAll(columnFamily, HeapAllocator.instance);
         writeStats.addNano(System.nanoTime() - start);
         
         return flushRequested ? mt : null;
@@ -1124,7 +1124,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     {
                         ColumnFamily cf = cached.cloneMeShallow();
                         if (sc != null)
-                            cf.addColumn(sc);
+                            cf.addColumn(sc, HeapAllocator.instance);
                         return removeDeleted(cf, gcBefore);
                     }
                 }
@@ -1424,7 +1424,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
                     {
                         if (expr != primary && data.getColumn(expr.column_name) == null)
                         {
-                            data.addAll(getColumnFamily(new QueryFilter(dk, path, extraFilter)));
+                            data.addAll(getColumnFamily(new QueryFilter(dk, path, extraFilter)), HeapAllocator.instance);
                             break;
                         }
                     }

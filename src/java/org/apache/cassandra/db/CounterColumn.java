@@ -129,7 +129,7 @@ public class CounterColumn extends Column
     }
 
     @Override
-    public IColumn reconcile(IColumn column)
+    public IColumn reconcile(IColumn column, Allocator allocator)
     {
         assert (column instanceof CounterColumn) || (column instanceof DeletedColumn) : "Wrong class type.";
 
@@ -156,8 +156,7 @@ public class CounterColumn extends Column
         // live + live: merge clocks; update value
         return new CounterColumn(
             name(),
-            // FIXME: this is probably wrong: reconcile will be called for memtable resolution
-            contextManager.merge(value(), column.value(), HeapAllocator.instance),
+            contextManager.merge(value(), column.value(), allocator),
             Math.max(timestamp(), column.timestamp()),
             Math.max(timestampOfLastDelete(), ((CounterColumn)column).timestampOfLastDelete()));
     }

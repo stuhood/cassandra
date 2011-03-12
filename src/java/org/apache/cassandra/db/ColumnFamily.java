@@ -38,7 +38,9 @@ import org.apache.cassandra.db.marshal.AbstractCommutativeType;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.IIterableColumns;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.HeapAllocator;
 
 public class ColumnFamily implements IColumnContainer, IIterableColumns
 {
@@ -128,8 +130,13 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     */
     public void addAll(ColumnFamily cf)
     {
+        addAll(cf, HeapAllocator.instance);
+    }
+
+    public void addAll(ColumnFamily cf, Allocator allocator)
+    {
         for (IColumn column : cf.getSortedColumns())
-            addColumn(column);
+            addColumn(column, allocator);
         delete(cf);
     }
 
@@ -190,7 +197,7 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
 
     public void addTombstone(ByteBuffer name, int localDeletionTime, long timestamp)
     {
-        addColumn(null, new DeletedColumn(name, localDeletionTime, timestamp));
+        addColumn((ByteBuffer)null, new DeletedColumn(name, localDeletionTime, timestamp));
     }
 
     public void addColumn(ByteBuffer superColumnName, Column column)
@@ -220,19 +227,24 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
     */
     public void addColumn(IColumn column)
     {
+        addColumn(column, HeapAllocator.instance);
+    }
+
+    public void addColumn(IColumn column, Allocator allocator)
+    {
         ByteBuffer name = column.name();
         IColumn oldColumn;
         while ((oldColumn = columns.putIfAbsent(name, column)) != null)
         {
             if (oldColumn instanceof SuperColumn)
             {
-                ((SuperColumn) oldColumn).putColumn(column);
+                ((SuperColumn) oldColumn).putColumn(column, allocator);
                 break;  // Delegated to SuperColumn
             }
             else
             {
                 // calculate reconciled col from old (existing) col and new col
-                IColumn reconciledColumn = column.reconcile(oldColumn);
+                IColumn reconciledColumn = column.reconcile(oldColumn, allocator);
                 if (columns.replace(name, oldColumn, reconciledColumn))
                     break;
 
@@ -408,10 +420,15 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
 
     public void resolve(ColumnFamily cf)
     {
+        resolve(cf, HeapAllocator.instance);
+    }
+
+    public void resolve(ColumnFamily cf, Allocator allocator)
+    {
         // Row _does_ allow null CF objects :(  seems a necessary evil for efficiency
         if (cf == null)
             return;
-        addAll(cf);
+        addAll(cf, allocator);
     }
 
     public int getEstimatedColumnCount()

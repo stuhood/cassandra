@@ -277,6 +277,7 @@ public class CounterContext implements IContext
      *
      * @param left counter context.
      * @param right counter context.
+     * @param allocator An allocator for the merged value.
      */
     public ByteBuffer merge(ByteBuffer left, ByteBuffer right, Allocator allocator)
     {
@@ -317,7 +318,7 @@ public class CounterContext implements IContext
         mergedBodyLength += leftState.remainingBodyLength() + rightState.remainingBodyLength();
 
         // Do the actual merge
-        ByteBuffer merged = ByteBuffer.allocate(mergedHeaderLength + mergedBodyLength);
+        ByteBuffer merged = allocator.allocate(mergedHeaderLength + mergedBodyLength);
         merged.putShort(merged.position(), (short) ((mergedHeaderLength - HEADER_SIZE_LENGTH) / HEADER_ELT_LENGTH));
         ContextState mergedState = new ContextState(merged, mergedHeaderLength);
         leftState.reset();

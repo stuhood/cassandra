@@ -55,11 +55,11 @@ public class DeletedColumn extends Column
     }
 
     @Override
-    public IColumn reconcile(IColumn column)
+    public IColumn reconcile(IColumn column, Allocator allocator)
     {
         if (column instanceof DeletedColumn)
-            return super.reconcile(column);
-        return column.reconcile(this);
+            return super.reconcile(column, allocator);
+        return column.reconcile(this, allocator);
     }
     
     @Override

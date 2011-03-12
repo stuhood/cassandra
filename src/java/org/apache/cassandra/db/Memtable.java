@@ -160,7 +160,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         // is really quite simple:
         clonedCf.delete(cf);
         for (IColumn column : cf.getSortedColumns())
-            clonedCf.addColumn(column.localCopy(cfs, allocator));
+            clonedCf.addColumn(column.localCopy(cfs, allocator), allocator);
     }
 
     // for debugging
