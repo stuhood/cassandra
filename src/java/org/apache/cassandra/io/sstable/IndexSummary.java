@@ -26,6 +26,11 @@ import java.util.List;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.SlabAllocator;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Two approaches to building an IndexSummary:
@@ -34,8 +39,16 @@ import org.apache.cassandra.db.DecoratedKey;
  */
 public class IndexSummary
 {
+    private static final Logger logger = LoggerFactory.getLogger(IndexSummary.class);
+    // TODO: part of the last slab will be wasted, but with an interesting amount
+    // of data, it's probably not worth worrying about
+    private static final int SLAB_SIZE_BYTES = 128 * 1024;
+
     private ArrayList<KeyPosition> indexPositions;
     private long keysWritten = 0;
+
+    // an allocator for keys added to this summary
+    private SlabAllocator allocator = new SlabAllocator(false, SLAB_SIZE_BYTES);
 
     public IndexSummary(long expectedKeys)
     {
@@ -56,9 +69,11 @@ public class IndexSummary
         return keysWritten % DatabaseDescriptor.getIndexInterval() == 0;
     }
 
-    public void addEntry(DecoratedKey decoratedKey, long indexPosition)
+    public void addEntry(DecoratedKey key, long indexPosition)
     {
-        indexPositions.add(new KeyPosition(decoratedKey, indexPosition));
+        // take ownership of this key
+        key = new DecoratedKey(key.token, allocator.clone(key.key));
+        indexPositions.add(new KeyPosition(key, indexPosition));
     }
 
     public void maybeAddEntry(DecoratedKey decoratedKey, long indexPosition)
@@ -75,6 +90,8 @@ public class IndexSummary
 
     public void complete()
     {
+        logger.debug("Completing IndexSummary with {}", allocator);
+        allocator = null;
         indexPositions.trimToSize();
     }
 

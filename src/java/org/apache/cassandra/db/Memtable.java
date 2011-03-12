@@ -54,6 +54,8 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 {
     private static final Logger logger = LoggerFactory.getLogger(Memtable.class);
 
+    private final static int SLAB_SIZE_BYTES = 2 * 1024 * 1024;
+
     private final AtomicBoolean isPendingFlush = new AtomicBoolean(false);
     private final AtomicInteger activeWriters = new AtomicInteger(0);
 
@@ -66,7 +68,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private final long THRESHOLD;
     private final long THRESHOLD_COUNT;
-    private SlabAllocator allocator = new SlabAllocator(DatabaseDescriptor.getOffHeapMemtables());
+    private SlabAllocator allocator = new SlabAllocator(DatabaseDescriptor.getOffHeapMemtables(), SLAB_SIZE_BYTES);
 
     public Memtable(ColumnFamilyStore cfs)
     {
@@ -146,13 +148,14 @@ public class Memtable implements Comparable<Memtable>, IFlushable
             clonedCf = cf.cloneMeShallow();
             for (IColumn column : cf.getSortedColumns())
                 clonedCf.addColumn(column.localCopy(cfs, allocator));
-            clonedCf = columnFamilies.putIfAbsent(key, clonedCf);
+            DecoratedKey keyClone = cfs.partitioner.decorateKey(allocator.clone(key.key));
+            clonedCf = columnFamilies.putIfAbsent(keyClone, clonedCf);
             if (clonedCf == null)
                 return;
             // else there was a race and the other thread won.  fall through to updating his CF object
         }
 
-        // we duplicate the funcationality of CF.resolve here to avoid having to either pass the Memtable in for
+        // we duplicate the functionality of CF.resolve here to avoid having to either pass the Memtable in for
         // the cloning operation, or cloning the CF container as well as the Columns.  fortunately, resolve
         // is really quite simple:
         clonedCf.delete(cf);

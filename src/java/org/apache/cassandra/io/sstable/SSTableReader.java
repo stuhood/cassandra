@@ -55,6 +55,12 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableReader.class);
 
+    // TODO: slabbing for a cache can result in internal fragmentation of the slabs
+    // so we keep them small here to minimize blowup:
+    // a more complete solution would be to retire an entire slab when a fraction
+    // of its content was no longer referenced
+    private static final int SLAB_SIZE_BYTES = 1024;
+
     // guesstimated size of INDEX_INTERVAL index entries
     private static final int INDEX_FILE_BUFFER_BYTES = 16 * DatabaseDescriptor.getIndexInterval();
 
@@ -113,6 +119,9 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
 
     private IndexSummary indexSummary;
     private Filter bf;
+
+    // an allocator for keys cached for this sstable
+    private final SlabAllocator allocator = new SlabAllocator(false, SLAB_SIZE_BYTES);
 
     private InstrumentedCache<Pair<Descriptor,DecoratedKey>, Long> keyCache;
 
@@ -409,9 +418,9 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
 
     public void cacheKey(DecoratedKey key, Long info)
     {
-        // avoid keeping a permanent reference to the original key buffer
-        DecoratedKey copiedKey = new DecoratedKey(key.token, key.key == null ? null : ByteBufferUtil.clone(key.key));
-        keyCache.put(new Pair<Descriptor, DecoratedKey>(descriptor, copiedKey), info);
+        // take ownership of the key in our allocator
+        key = new DecoratedKey(key.token, allocator.clone(key.key));
+        keyCache.put(new Pair<Descriptor, DecoratedKey>(descriptor, key), info);
     }
 
     public Long getCachedPosition(DecoratedKey key)

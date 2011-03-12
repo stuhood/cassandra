@@ -48,17 +48,20 @@ import org.apache.cassandra.utils.FreeableMemory;
  */
 public class SlabAllocator extends Allocator
 {
-    private final static int REGION_SIZE = 2 * 1024 * 1024;
-    private final static int MAX_CLONED_SIZE = 256 * 1024; // bigger than this don't go in the region
-
     private final AtomicReference<Region> currentRegion = new AtomicReference<Region>();
     private final Collection<Region> filledRegions = new LinkedBlockingQueue<Region>();
 
     private final boolean direct;
-    public SlabAllocator(boolean direct)
+    private final int maxSlabAllocation;
+    private final int regionSize;
+
+    public SlabAllocator(boolean direct, int size)
     {
         this.direct = direct;
+        regionSize = size;
+        maxSlabAllocation = regionSize >> 2;
     }
+
     public ByteBuffer allocate(int size)
     {
         assert size >= 0;
@@ -67,7 +70,7 @@ public class SlabAllocator extends Allocator
 
         // satisfy large allocations directly from JVM since they don't cause fragmentation
         // as badly, and fill up our regions quickly
-        if (size > MAX_CLONED_SIZE)
+        if (size > maxSlabAllocation)
             return ByteBuffer.allocate(size);
 
         while (true)
@@ -110,7 +113,7 @@ public class SlabAllocator extends Allocator
             // No current region, so we want to allocate one. We race
             // against other allocators to CAS in an uninitialized region
             // (which is cheap to allocate)
-            region = new Region(direct, REGION_SIZE);
+            region = new Region(direct, regionSize);
             if (currentRegion.compareAndSet(null, region))
             {
                 // we won race - now we need to actually do the expensive allocation step
