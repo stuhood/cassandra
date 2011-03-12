@@ -362,6 +362,11 @@ public class DatabaseDescriptor
                     throw new ConfigurationException("saved_caches_directory missing");
             }
 
+            if (conf.off_heap_memtables)
+                logger.info("Using off-heap memtable allocation arenas");
+            else
+                logger.info("Allocating memtable regions inside the JVM");
+
             // Hardcoded system tables
             KSMetaData systemMeta = new KSMetaData(Table.SYSTEM_TABLE,
                                                    LocalStrategy.class,
@@ -1056,5 +1061,10 @@ public class DatabaseDescriptor
     public static int getFlushQueueSize()
     {
         return conf.memtable_flush_queue_size;
+    }
+
+    public static boolean getOffHeapMemtables()
+    {
+        return conf.off_heap_memtables;
     }
 }

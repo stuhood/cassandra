@@ -153,6 +153,9 @@ concurrent_writes: 32
 # the maximum number of secondary indexes created on a single CF.
 memtable_flush_queue_size: 4
 
+# set to true to allocate memtable buffers natively
+off_heap_memtables: false
+
 # Buffer size to use when performing contiguous column slices. 
 # Increase this to the size of the column slices you typically perform
 sliced_buffer_size_in_kb: 64

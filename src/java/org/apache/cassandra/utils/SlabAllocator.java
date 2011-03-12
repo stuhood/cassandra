@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FreeableMemory;
 
 /**
  * A slabbed Allocator.
@@ -53,6 +54,11 @@ public class SlabAllocator extends Allocator
     private final AtomicReference<Region> currentRegion = new AtomicReference<Region>();
     private final Collection<Region> filledRegions = new LinkedBlockingQueue<Region>();
 
+    private final boolean direct;
+    public SlabAllocator(boolean direct)
+    {
+        this.direct = direct;
+    }
     public ByteBuffer allocate(int size)
     {
         assert size >= 0;
@@ -84,10 +90,9 @@ public class SlabAllocator extends Allocator
      */
     private void tryRetireRegion(Region region)
     {
-        if (currentRegion.compareAndSet(region, null))
-        {
+        // retire the region regardless, but only record direct buffers as filled
+        if (currentRegion.compareAndSet(region, null) && direct)
             filledRegions.add(region);
-        }
     }
 
     /**
@@ -105,7 +110,7 @@ public class SlabAllocator extends Allocator
             // No current region, so we want to allocate one. We race
             // against other allocators to CAS in an uninitialized region
             // (which is cheap to allocate)
-            region = new Region(REGION_SIZE);
+            region = new Region(direct, REGION_SIZE);
             if (currentRegion.compareAndSet(null, region))
             {
                 // we won race - now we need to actually do the expensive allocation step
@@ -115,6 +120,18 @@ public class SlabAllocator extends Allocator
             // someone else won race - that's fine, we'll try to grab theirs
             // in the next iteration of the loop.
         }
+    }
+
+    public void free()
+    {
+        if (!direct)
+            // noop
+            return;
+        Region last = currentRegion.get();
+        if (last != null)
+            filledRegions.add(last);
+        for (Region region : filledRegions)
+            region.free();
     }
 
     /**
@@ -127,22 +144,30 @@ public class SlabAllocator extends Allocator
      */
     private static class Region
     {
+        private static final int UNINITIALIZED = -1;
+
         /**
          * Actual underlying data
          */
         private ByteBuffer data;
 
-        private static final int UNINITIALIZED = -1;
+        private FreeableMemory memory;
+
         /**
          * Offset for the next allocation, or the sentinel value -1
          * which implies that the region is still uninitialized.
          */
-        private AtomicInteger nextFreeOffset = new AtomicInteger(UNINITIALIZED);
+        private final AtomicInteger nextFreeOffset = new AtomicInteger(UNINITIALIZED);
 
         /**
          * Total number of allocations satisfied from this buffer
          */
-        private AtomicInteger allocCount = new AtomicInteger();
+        private final AtomicInteger allocCount = new AtomicInteger();
+
+        /**
+         * True if this allocation should be made offheap.
+         */
+        private final boolean direct;
 
         /**
          * Size of region in bytes
@@ -155,8 +180,9 @@ public class SlabAllocator extends Allocator
          *
          * @param size in bytes
          */
-        private Region(int size)
+        private Region(boolean direct, int size)
         {
+            this.direct = direct;
             this.size = size;
         }
 
@@ -168,7 +194,16 @@ public class SlabAllocator extends Allocator
         public void init()
         {
             assert nextFreeOffset.get() == UNINITIALIZED;
-            data = ByteBuffer.allocate(size);
+            if (direct)
+            {
+                memory = new FreeableMemory(size);
+                data = memory.getByteBuffer(0, size);
+            }
+            else
+            {
+                data = ByteBuffer.allocate(size);
+            }
+
             assert data.remaining() == data.capacity();
             // Mark that it's ready for use
             boolean initted = nextFreeOffset.compareAndSet(UNINITIALIZED, 0);
@@ -216,6 +251,12 @@ public class SlabAllocator extends Allocator
             return "Region@" + System.identityHashCode(this) +
                    " allocs=" + allocCount.get() + "waste=" +
                    (data.capacity() - nextFreeOffset.get());
+        }
+
+        public void free()
+        {
+            if (memory != null)
+                memory.free();
         }
     }
 }

@@ -38,6 +38,7 @@ import com.google.common.collect.PeekingIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.SimpleAbstractColumnIterator;
 import org.apache.cassandra.db.filter.AbstractColumnIterator;
@@ -65,7 +66,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private final long THRESHOLD;
     private final long THRESHOLD_COUNT;
-    private SlabAllocator allocator = new SlabAllocator();
+    private SlabAllocator allocator = new SlabAllocator(DatabaseDescriptor.getOffHeapMemtables());
 
     public Memtable(ColumnFamilyStore cfs)
     {
@@ -184,6 +185,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         SSTableReader ssTable = writer.closeAndOpenReader();
         logger.info(String.format("Completed flushing %s (%d bytes)",
                                   ssTable.getFilename(), new File(ssTable.getFilename()).length()));
+        allocator.free();
         return ssTable;
     }
 
