@@ -1977,10 +1977,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         return internedName;
     }
 
-    public ByteBuffer internOrCopy(ByteBuffer name)
+    public ByteBuffer internOrCopy(ByteBuffer name, Allocator allocator)
     {
         if (internedNames.size() >= INTERN_CUTOFF)
-            return ByteBufferUtil.clone(name);
+            return allocator.clone(name);
 
         return intern(name);
     }
@@ -1988,7 +1988,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public ByteBuffer maybeIntern(ByteBuffer name)
     {
         if (internedNames.size() >= INTERN_CUTOFF)
-            return name;
+            return null;
 
         return intern(name);
     }

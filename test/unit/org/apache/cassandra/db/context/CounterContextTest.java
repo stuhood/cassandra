@@ -25,16 +25,16 @@ import static org.junit.Assert.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
-import java.util.*;
-
-import org.apache.commons.lang.ArrayUtils;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.Test;
-
 import org.apache.cassandra.Util;
+
 import org.apache.cassandra.db.context.IContext.ContextRelationship;
 import static org.apache.cassandra.db.context.CounterContext.ContextState;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.HeapAllocator;
 import org.apache.cassandra.utils.NodeId;
 
 public class CounterContextTest
@@ -58,7 +58,7 @@ public class CounterContextTest
     @Test
     public void testCreate()
     {
-        ByteBuffer context = cc.create(4);
+        ByteBuffer context = cc.create(4, HeapAllocator.instance);
         assert context.remaining() == stepLength + 4;
     }
 

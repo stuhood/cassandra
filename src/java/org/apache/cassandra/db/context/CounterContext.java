@@ -22,6 +22,7 @@ import java.security.MessageDigest;
 import java.util.*;
 
 import org.apache.cassandra.db.DBConstants;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.NodeId;
 
@@ -82,13 +83,15 @@ public class CounterContext implements IContext
     /**
      * Creates an initial counter context with an initial value for the local node with.
      *
+     *
      * @param value the value for this initial update
      *
+     * @param allocator
      * @return an empty counter context.
      */
-    public ByteBuffer create(long value)
+    public ByteBuffer create(long value, Allocator allocator)
     {
-        ByteBuffer context = ByteBuffer.allocate(HEADER_SIZE_LENGTH + HEADER_ELT_LENGTH + STEP_LENGTH);
+        ByteBuffer context = allocator.allocate(HEADER_SIZE_LENGTH + HEADER_ELT_LENGTH + STEP_LENGTH);
         // The first (and only) elt is a delta
         context.putShort(0, (short)1);
         context.putShort(HEADER_SIZE_LENGTH, (short)0);

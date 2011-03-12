@@ -328,7 +328,7 @@ public class StorageProxy implements StorageProxyMBean
         {
             public void runMayThrow() throws IOException
             {
-                rm.localCopy().apply();
+                rm.apply();
                 responseHandler.response(null);
             }
         };

@@ -141,7 +141,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     {
         try
         {
-            return sstable.getColumnSerializer().deserialize(file, null, false, expireBefore);
+            return sstable.getColumnSerializer().deserialize(file, false, expireBefore);
         }
         catch (IOException e)
         {
@@ -177,7 +177,7 @@ public class SSTableIdentityIterator implements Comparable<SSTableIdentityIterat
     {
         file.seek(columnPosition - 4); // seek to before column count int
         ColumnFamily cf = columnFamily.cloneMeShallow();
-        ColumnFamily.serializer().deserializeColumns(file, cf, false, false);
+        ColumnFamily.serializer().deserializeColumns(file, cf, false);
         return cf;
     }
 

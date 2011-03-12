@@ -23,6 +23,7 @@ import java.security.MessageDigest;
 import java.util.Collection;
 
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.FBUtilities;
 
 public interface IColumn
@@ -47,9 +48,15 @@ public interface IColumn
     public int getLocalDeletionTime(); // for tombstone GC, so int is sufficient granularity
     public String getString(AbstractType comparator);
 
-    /** clones the column, interning column names and making copies of other underlying byte buffers
-     * @param cfs*/
+    /** clones the column for the row cache, interning column names and making copies of other underlying byte buffers */
     IColumn localCopy(ColumnFamilyStore cfs);
+
+    /**
+     * clones the column for the memtable, interning column names and making copies of other underlying byte buffers.
+     * Unlike the other localCopy, this uses Allocator to allocate values in contiguous memory regions,
+     * which helps avoid heap fragmentation.
+     */
+    IColumn localCopy(ColumnFamilyStore cfs, Allocator allocator);
 
     /**
      * For a simple column, live == !isMarkedForDelete.

@@ -33,6 +33,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.util.ColumnSortedMap;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.utils.Allocator;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -312,6 +313,18 @@ public class SuperColumn implements IColumn, IColumnContainer
         return sc;
     }
 
+    public IColumn localCopy(ColumnFamilyStore cfs, Allocator allocator)
+    {
+        SuperColumn sc = new SuperColumn(allocator.clone(name_), this.getComparator());
+        sc.localDeletionTime = localDeletionTime;
+        sc.markedForDeleteAt = markedForDeleteAt;
+
+        for (Map.Entry<ByteBuffer, IColumn> c : columns_.entrySet())
+            sc.addColumn(c.getValue().localCopy(cfs, allocator));
+
+        return sc;
+    }
+
     public IColumn reconcile(IColumn c)
     {
         throw new UnsupportedOperationException("This operation is unsupported on super columns.");
@@ -361,20 +374,15 @@ class SuperColumnSerializer implements IColumnSerializer
 
     public IColumn deserialize(DataInput dis) throws IOException
     {
-        return deserialize(dis, null, false);
+        return deserialize(dis, false);
     }
 
-    public IColumn deserialize(DataInput dis, ColumnFamilyStore interner) throws IOException
+    public IColumn deserialize(DataInput dis, boolean fromRemote) throws IOException
     {
-        return deserialize(dis, interner, false);
+        return deserialize(dis, fromRemote, (int)(System.currentTimeMillis() / 1000));
     }
 
-    public IColumn deserialize(DataInput dis, ColumnFamilyStore interner, boolean fromRemote) throws IOException
-    {
-        return deserialize(dis, interner, fromRemote, (int)(System.currentTimeMillis() / 1000));
-    }
-
-    public IColumn deserialize(DataInput dis, ColumnFamilyStore interner, boolean fromRemote, int expireBefore) throws IOException
+    public IColumn deserialize(DataInput dis, boolean fromRemote, int expireBefore) throws IOException
     {
         ByteBuffer name = ByteBufferUtil.readWithShortLength(dis);
         int localDeleteTime = dis.readInt();
@@ -387,7 +395,7 @@ class SuperColumnSerializer implements IColumnSerializer
         /* read the number of columns */
         int size = dis.readInt();
         ColumnSerializer serializer = Column.serializer();
-        ColumnSortedMap preSortedMap = new ColumnSortedMap(comparator, serializer, dis, interner, size, fromRemote, expireBefore);
+        ColumnSortedMap preSortedMap = new ColumnSortedMap(comparator, serializer, dis, size, fromRemote, expireBefore);
         SuperColumn superColumn = new SuperColumn(name, new ConcurrentSkipListMap<ByteBuffer,IColumn>(preSortedMap));
         if (localDeleteTime != Integer.MIN_VALUE && localDeleteTime <= 0)
         {

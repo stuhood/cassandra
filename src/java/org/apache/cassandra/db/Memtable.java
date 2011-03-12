@@ -46,6 +46,7 @@ import org.apache.cassandra.db.filter.SliceQueryFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
+import org.apache.cassandra.utils.SlabAllocator;
 import org.apache.cassandra.utils.WrappedRunnable;
 
 public class Memtable implements Comparable<Memtable>, IFlushable
@@ -64,10 +65,10 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private final long THRESHOLD;
     private final long THRESHOLD_COUNT;
+    private SlabAllocator allocator = new SlabAllocator();
 
     public Memtable(ColumnFamilyStore cfs)
     {
-
         this.cfs = cfs;
         creationTime = System.currentTimeMillis();
         THRESHOLD = cfs.getMemtableThroughputInMB() * 1024L * 1024L;
@@ -137,11 +138,25 @@ public class Memtable implements Comparable<Memtable>, IFlushable
         currentThroughput.addAndGet(cf.size());
         currentOperations.addAndGet(cf.getColumnCount());
 
-        ColumnFamily oldCf = columnFamilies.putIfAbsent(key, cf);
-        if (oldCf == null)
-            return;
+        ColumnFamily clonedCf = columnFamilies.get(key);
+        // if the row doesn't exist yet in the memtable, clone cf to our allocator.
+        if (clonedCf == null)
+        {
+            clonedCf = cf.cloneMeShallow();
+            for (IColumn column : cf.getSortedColumns())
+                clonedCf.addColumn(column.localCopy(cfs, allocator));
+            clonedCf = columnFamilies.putIfAbsent(key, clonedCf);
+            if (clonedCf == null)
+                return;
+            // else there was a race and the other thread won.  fall through to updating his CF object
+        }
 
-        oldCf.resolve(cf);
+        // we duplicate the funcationality of CF.resolve here to avoid having to either pass the Memtable in for
+        // the cloning operation, or cloning the CF container as well as the Columns.  fortunately, resolve
+        // is really quite simple:
+        clonedCf.delete(cf);
+        for (IColumn column : cf.getSortedColumns())
+            clonedCf.addColumn(column.localCopy(cfs, allocator));
     }
 
     // for debugging

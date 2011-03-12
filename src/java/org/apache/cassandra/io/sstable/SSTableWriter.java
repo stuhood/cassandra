@@ -470,7 +470,7 @@ public class SSTableWriter extends SSTable
                 ColumnFamily cf = ColumnFamily.create(desc.ksname, desc.cfname);
                 ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf, dfile);
                 // The data is coming from another host
-                ColumnFamily.serializer().deserializeColumns(dfile, cf, false, true);
+                ColumnFamily.serializer().deserializeColumns(dfile, cf, true);
                 rowSizes.add(dataSize);
                 columnCounts.add(cf.getEstimatedColumnCount());
 
