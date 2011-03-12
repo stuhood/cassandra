@@ -78,13 +78,19 @@ public class CounterColumn extends Column
     }
 
     @Override
-    public int size()
+    public int overhead()
+    {
+        return super.overhead() + DBConstants.tsSize_;
+    }
+
+    @Override
+    public int serializedSize()
     {
         /*
          * A counter column adds to a Column :
          *  + 8 bytes for timestampOfLastDelete
          */
-        return super.size() + DBConstants.tsSize_;
+        return super.serializedSize() + DBConstants.tsSize_;
     }
 
     @Override

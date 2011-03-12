@@ -347,13 +347,15 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
         return (AbstractType)columns.comparator();
     }
 
-    int size()
+    /**
+     * @return The non-variable overhead of this row in bytes.
+     */
+    int overhead()
     {
         int size = 0;
         for (IColumn column : columns.values())
-        {
-            size += column.size();
-        }
+            // 4 pointers per CSLM node
+            size += column.overhead() + 4 * DBConstants.oopSize_;
         return size;
     }
 

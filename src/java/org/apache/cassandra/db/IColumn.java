@@ -35,7 +35,7 @@ public interface IColumn
     public long getMarkedForDeleteAt();
     public long mostRecentLiveChangeAt();
     public ByteBuffer name();
-    public int size();
+    public int overhead();
     public int serializedSize();
     public int serializationFlags();
     public long timestamp();

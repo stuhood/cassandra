@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Preconditions;
@@ -50,6 +51,7 @@ public class SlabAllocator extends Allocator
 {
     private final AtomicReference<Region> currentRegion = new AtomicReference<Region>();
     private final Collection<Region> filledRegions = new LinkedBlockingQueue<Region>();
+    private final AtomicLong allocated = new AtomicLong(0);
 
     private final boolean direct;
     private final int maxSlabAllocation;
@@ -62,11 +64,18 @@ public class SlabAllocator extends Allocator
         maxSlabAllocation = regionSize >> 2;
     }
 
+    /** @return Total number of bytes allocated by this allocator. */
+    public long allocated()
+    {
+        return allocated.get();
+    }
+
     public ByteBuffer allocate(int size)
     {
         assert size >= 0;
         if (size == 0)
             return ByteBufferUtil.EMPTY_BYTE_BUFFER;
+        allocated.addAndGet(size);
 
         // satisfy large allocations directly from JVM since they don't cause fragmentation
         // as badly, and fill up our regions quickly

@@ -111,7 +111,16 @@ public class Column implements IColumn
         return timestamp;
     }
 
-    public int size()
+    public int overhead()
+    {
+        return DBConstants.tsSize_ + 2 * DBConstants.oopSize_;
+    }
+
+    /*
+     * This returns the size of the column when serialized.
+     * @see com.facebook.infrastructure.db.IColumn#serializedSize()
+    */
+    public int serializedSize()
     {
         /*
          * Size of a column is =
@@ -122,15 +131,6 @@ public class Column implements IColumn
          * + entire byte array.
         */
         return DBConstants.shortSize_ + name.remaining() + DBConstants.boolSize_ + DBConstants.tsSize_ + DBConstants.intSize_ + value.remaining();
-    }
-
-    /*
-     * This returns the size of the column when serialized.
-     * @see com.facebook.infrastructure.db.IColumn#serializedSize()
-    */
-    public int serializedSize()
-    {
-        return size();
     }
 
     public int serializationFlags()

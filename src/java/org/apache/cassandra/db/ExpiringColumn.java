@@ -69,14 +69,20 @@ public class ExpiringColumn extends Column
     }
 
     @Override
-    public int size()
+    public int overhead()
     {
         /*
          * An expired column adds to a Column : 
          *    4 bytes for the localExpirationTime
          *  + 4 bytes for the timeToLive
         */
-        return super.size() + DBConstants.intSize_ + DBConstants.intSize_;
+        return super.overhead() + DBConstants.intSize_ + DBConstants.intSize_;
+    }
+
+    @Override
+    public int serializedSize()
+    {
+        return super.serializedSize() + DBConstants.intSize_ + DBConstants.intSize_;
     }
 
     @Override

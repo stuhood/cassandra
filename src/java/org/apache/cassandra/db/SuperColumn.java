@@ -110,15 +110,14 @@ public class SuperColumn implements IColumn, IColumnContainer
     }
 
     /**
-     * This calculates the exact size of the sub columns on the fly
+     * @return The approximate in-memory overhead of the sub columns.
      */
-    public int size()
+    public int overhead()
     {
         int size = 0;
         for (IColumn subColumn : getSubColumns())
-        {
-            size += subColumn.serializedSize();
-        }
+            // 4 pointers per CSLM node
+            size += subColumn.overhead() + 4 * DBConstants.oopSize_;
         return size;
     }
 
@@ -132,7 +131,10 @@ public class SuperColumn implements IColumn, IColumnContainer
     	 * We need to keep the way we are calculating the column size in sync with the
     	 * way we are calculating the size for the column family serializer.
     	 */
-      return DBConstants.shortSize_ + name_.remaining() + DBConstants.intSize_ + DBConstants.longSize_ + DBConstants.intSize_ + size();
+        int size = 0;
+        for (IColumn subColumn : getSubColumns())
+            size += subColumn.serializedSize();
+        return DBConstants.shortSize_ + name_.remaining() + DBConstants.intSize_ + DBConstants.longSize_ + DBConstants.intSize_ + size;
     }
 
     public void remove(ByteBuffer columnName)

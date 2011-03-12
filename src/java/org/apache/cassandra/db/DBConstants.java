@@ -25,4 +25,6 @@ public class DBConstants
 	public static final int longSize_ = 8;
 	public static final int shortSize_ = 2;
 	public static final int tsSize_ = 8;
+	// TODO: adjust based on platform and availability of CompressedOops
+	public static final int oopSize_ = 8;
 }

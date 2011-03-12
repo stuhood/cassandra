@@ -59,7 +59,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
     private final AtomicBoolean isPendingFlush = new AtomicBoolean(false);
     private final AtomicInteger activeWriters = new AtomicInteger(0);
 
-    private final AtomicLong currentThroughput = new AtomicLong(0);
+    private final AtomicLong currentRowOverhead = new AtomicLong(0);
     private final AtomicLong currentOperations = new AtomicLong(0);
 
     private final long creationTime;
@@ -97,7 +97,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     public long getCurrentThroughput()
     {
-        return currentThroughput.get();
+        return currentRowOverhead.get() + allocator.allocated();
     }
     
     public long getCurrentOperations()
@@ -107,7 +107,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     boolean isThresholdViolated()
     {
-        return currentThroughput.get() >= this.THRESHOLD || currentOperations.get() >= this.THRESHOLD_COUNT;
+        return getCurrentThroughput() >= this.THRESHOLD || currentOperations.get() >= this.THRESHOLD_COUNT;
     }
 
     boolean isPendingFlush()
@@ -138,7 +138,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
 
     private void resolve(DecoratedKey key, ColumnFamily cf)
     {
-        currentThroughput.addAndGet(cf.size());
+        currentRowOverhead.addAndGet(cf.overhead());
         currentOperations.addAndGet(cf.getColumnCount());
 
         ColumnFamily clonedCf = columnFamilies.get(key);
@@ -239,7 +239,7 @@ public class Memtable implements Comparable<Memtable>, IFlushable
     public String toString()
     {
         return String.format("Memtable-%s@%s(%s bytes, %s operations)",
-                             cfs.getColumnFamilyName(), hashCode(), currentThroughput, currentOperations);
+                             cfs.getColumnFamilyName(), hashCode(), getCurrentThroughput(), currentOperations);
     }
 
     /**
