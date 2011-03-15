@@ -113,6 +113,8 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
 
     private IndexSummary indexSummary;
     private Filter bf;
+    private final EstimatedHistogram estimatedRowSize;
+    private final EstimatedHistogram estimatedColumnCount;
 
     private InstrumentingCache<Pair<Descriptor, DecoratedKey>, Long> keyCache;
 
@@ -223,13 +225,15 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
                           EstimatedHistogram columnCounts)
     throws IOException
     {
-        super(desc, components, metadata, partitioner, rowSizes, columnCounts);
+        super(desc, components, metadata, partitioner);
         this.maxDataAge = maxDataAge;
 
         this.ifile = ifile;
         this.dfile = dfile;
         this.indexSummary = indexSummary;
         this.bf = bloomFilter;
+        estimatedRowSize = rowSizes;
+        estimatedColumnCount = columnCounts;
     }
 
     public void setTrackedBy(DataTracker tracker)
@@ -357,6 +361,16 @@ public class SSTableReader extends SSTable implements Comparable<SSTableReader>
     public Filter getBloomFilter()
     {
       return bf;
+    }
+
+    public EstimatedHistogram getEstimatedRowSize()
+    {
+        return estimatedRowSize;
+    }
+
+    public EstimatedHistogram getEstimatedColumnCount()
+    {
+        return estimatedColumnCount;
     }
 
     /**

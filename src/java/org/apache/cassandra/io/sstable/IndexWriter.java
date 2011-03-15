@@ -34,9 +34,10 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.utils.BloomFilter;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.EstimatedHistogram;
 
 /**
- * Encapsulates writing the index and filter for an SSTable. The state of this
+ * Encapsulates writing the index, filter and statistics for an SSTable. The state of this
  * object is not valid until it has been closed.
  */
 class IndexWriter
@@ -49,6 +50,9 @@ class IndexWriter
     public final SegmentedFile.Builder builder;
     public final IndexSummary summary;
     public final BloomFilter bf;
+    public final EstimatedHistogram estimatedRowSize;
+    public final EstimatedHistogram estimatedColumnCount;
+
     private FileMark mark;
 
     IndexWriter(Descriptor desc, IPartitioner part, long keyCount) throws IOException
@@ -59,11 +63,15 @@ class IndexWriter
         builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
         summary = new IndexSummary(keyCount);
         bf = BloomFilter.getFilter(keyCount, 15);
+        estimatedRowSize = SSTable.defaultRowHistogram();
+        estimatedColumnCount = SSTable.defaultColumnHistogram();
     }
 
-    public void afterAppend(DecoratedKey key, long dataPosition) throws IOException
+    public void afterAppend(DecoratedKey key, long dataPosition, long dataSize, long columnCount) throws IOException
     {
         bf.add(key.key);
+        estimatedRowSize.add(dataSize);
+        estimatedColumnCount.add(columnCount);
         long indexPosition = indexFile.getFilePointer();
         ByteBufferUtil.writeWithShortLength(key.key, indexFile);
         indexFile.writeLong(dataPosition);
@@ -91,6 +99,15 @@ class IndexWriter
         long position = indexFile.getFilePointer();
         indexFile.close(); // calls force
         FileUtils.truncate(indexFile.getPath(), position);
+
+        // statistics
+        BufferedRandomAccessFile out = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_STATS)),
+                                                                    "rw",
+                                                                    BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE,
+                                                                    true);
+        EstimatedHistogram.serializer.serialize(estimatedRowSize, out);
+        EstimatedHistogram.serializer.serialize(estimatedColumnCount, out);
+        out.close();
 
         // finalize in-memory index state
         summary.complete();

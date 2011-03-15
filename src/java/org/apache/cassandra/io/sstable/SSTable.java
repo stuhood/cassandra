@@ -67,17 +67,9 @@ public abstract class SSTable
     public final CFMetaData metadata;
     public final IPartitioner partitioner;
 
-    protected final EstimatedHistogram estimatedRowSize;
-    protected final EstimatedHistogram estimatedColumnCount;
-
     protected SSTable(Descriptor descriptor, CFMetaData metadata, IPartitioner partitioner)
     {
         this(descriptor, new HashSet<Component>(), metadata, partitioner);
-    }
-
-    protected SSTable(Descriptor descriptor, Set<Component> components, CFMetaData metadata, IPartitioner partitioner)
-    {
-        this(descriptor, components, metadata, partitioner, defaultRowHistogram(), defaultColumnHistogram());
     }
 
     static EstimatedHistogram defaultColumnHistogram()
@@ -90,7 +82,7 @@ public abstract class SSTable
         return new EstimatedHistogram(150);
     }
 
-    protected SSTable(Descriptor descriptor, Set<Component> components, CFMetaData metadata, IPartitioner partitioner, EstimatedHistogram rowSizes, EstimatedHistogram columnCounts)
+    protected SSTable(Descriptor descriptor, Set<Component> components, CFMetaData metadata, IPartitioner partitioner)
     {
         this.descriptor = descriptor;
         Set<Component> dataComponents = new HashSet<Component>(components);
@@ -99,18 +91,6 @@ public abstract class SSTable
         this.components = Collections.unmodifiableSet(dataComponents);
         this.metadata = metadata;
         this.partitioner = partitioner;
-        estimatedRowSize = rowSizes;
-        estimatedColumnCount = columnCounts;
-    }
-
-    public EstimatedHistogram getEstimatedRowSize()
-    {
-        return estimatedRowSize;
-    }
-
-    public EstimatedHistogram getEstimatedColumnCount()
-    {
-        return estimatedColumnCount;
     }
 
     /**
