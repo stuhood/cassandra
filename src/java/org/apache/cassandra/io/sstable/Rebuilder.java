@@ -38,7 +38,6 @@ import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.OperationType;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.EstimatedHistogram;
 
 /**
  * Rebuilds components of an SSTable based on its data file: typically used after
@@ -144,7 +143,7 @@ public class Rebuilder implements CompactionInfo.Holder
             try
             {
                 estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
-                iwriter = new IndexWriter(desc, StorageService.getPartitioner(), estimatedRows);
+                iwriter = new IndexWriter(desc, StorageService.getPartitioner(), ReplayPosition.NONE, estimatedRows);
                 return estimatedRows;
             }
             catch(IOException e)
@@ -228,20 +227,18 @@ public class Rebuilder implements CompactionInfo.Holder
 
         protected long doIndexing() throws IOException
         {
-            EstimatedHistogram rowSizes = SSTable.defaultRowHistogram();
-            EstimatedHistogram columnCounts = SSTable.defaultColumnHistogram();
             long rows = 0;
             DecoratedKey key;
             long rowPosition = 0;
+            long nextRowPosition = 0;
             while (rowPosition < dfile.length())
             {
                 // read key
                 key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(dfile));
-                iwriter.afterAppend(key, rowPosition);
 
-                // seek to next key
+                // determine where the row ends
                 long dataSize = SSTableReader.readRowSize(dfile, desc);
-                rowPosition = dfile.getFilePointer() + dataSize;
+                nextRowPosition = dfile.getFilePointer() + dataSize;
                 
                 IndexHelper.skipBloomFilter(dfile);
                 IndexHelper.skipIndex(dfile);
@@ -250,12 +247,13 @@ public class Rebuilder implements CompactionInfo.Holder
                 // don't move that statement around, it expects the dfile to be before the columns
                 updateCache(key, dataSize, null);
 
-                rowSizes.add(dataSize);
-                columnCounts.add(dfile.readInt());
+                // append row info to the index and move to the next row
+                long columnCount = dfile.readInt();
+                iwriter.afterAppend(key, rowPosition, dataSize, columnCount);
+                rowPosition = nextRowPosition;
                 dfile.seek(rowPosition);
                 rows++;
             }
-            SSTableWriter.writeMetadata(desc, rowSizes, columnCounts, ReplayPosition.NONE);
             return rows;
         }
     }
@@ -284,8 +282,6 @@ public class Rebuilder implements CompactionInfo.Holder
         @Override
         protected long doIndexing() throws IOException
         {
-            EstimatedHistogram rowSizes = SSTable.defaultRowHistogram();
-            EstimatedHistogram columnCounts = SSTable.defaultColumnHistogram();
             long rows = 0L;
             DecoratedKey key;
 
@@ -303,18 +299,14 @@ public class Rebuilder implements CompactionInfo.Holder
                 AbstractCompactedRow row = controller.getCompactedRow(iter);
                 updateCache(key, dataSize, row);
 
-                rowSizes.add(dataSize);
-                columnCounts.add(row.columnCount());
-
                 // update index writer
-                iwriter.afterAppend(key, writerDfile.getFilePointer());
+                iwriter.afterAppend(key, writerDfile.getFilePointer(), dataSize, row.columnCount());
                 // write key and row
                 ByteBufferUtil.writeWithShortLength(key.key, writerDfile);
                 row.write(writerDfile);
 
                 rows++;
             }
-            SSTableWriter.writeMetadata(desc, rowSizes, columnCounts, ReplayPosition.NONE);
 
             if (writerDfile.getFilePointer() != dfile.getFilePointer())
             {
