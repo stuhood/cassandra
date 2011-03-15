@@ -39,7 +39,6 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.OperationType;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.EstimatedHistogram;
 
 /**
  * Rebuilds components of an SSTable based on its data file: typically used after
@@ -192,11 +191,9 @@ public class Rebuilder implements CompactionInfo.Holder
         protected SSTableReader doIndexing() throws IOException
         {
             long estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
-            IndexWriter iwriter = new IndexWriter(desc, cfs.partitioner, estimatedRows);
+            IndexWriter iwriter = new IndexWriter(desc, cfs.partitioner, ReplayPosition.NONE, estimatedRows);
             try
             {
-                EstimatedHistogram rowSizes = SSTable.defaultRowHistogram();
-                EstimatedHistogram columnCounts = SSTable.defaultColumnHistogram();
                 long rows = 0;
                 while (!dfile.isEOF())
                 {
@@ -210,13 +207,10 @@ public class Rebuilder implements CompactionInfo.Holder
                     updateCache(iter);
                     // close the iterator to position ourself at the end of the row
                     iter.close();
-                    iwriter.afterAppend(iter.getKey(), rowPosition);
-                    rowSizes.add(iter.getDataSize());
-                    columnCounts.add(iter.getColumnCount());
+                    iwriter.afterAppend(iter.getKey(), rowPosition, iter.getDataSize(), iter.getColumnCount());
 
                     rows++;
                 }
-                SSTableWriter.writeMetadata(desc, rowSizes, columnCounts, ReplayPosition.NONE);
                 logger.debug("estimated row count was {} of real count", ((double)estimatedRows) / rows);
             }
             finally
@@ -257,7 +251,6 @@ public class Rebuilder implements CompactionInfo.Holder
             SSTableWriter writer = cfs.createFlushWriter(estimatedRows, dfile.length(), ReplayPosition.NONE);
             try
             {
-                DecoratedKey key;
                 CompactionController controller = new CompactionController(cfs, Collections.<SSTableReader>emptyList(), Integer.MAX_VALUE, true);
                 long dfileLength = dfile.length();
                 while (!dfile.isEOF())

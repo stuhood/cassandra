@@ -70,9 +70,6 @@ public abstract class SSTable
 
     public final ReplayPosition replayPosition;
 
-    protected final EstimatedHistogram estimatedRowSize;
-    protected final EstimatedHistogram estimatedColumnCount;
-
     protected SSTable(Descriptor descriptor, CFMetaData metadata, ReplayPosition replayPosition, IPartitioner partitioner)
     {
         this(descriptor, new HashSet<Component>(), metadata, replayPosition, partitioner);
@@ -102,8 +99,6 @@ public abstract class SSTable
         this.metadata = metadata;
         this.replayPosition = replayPosition;
         this.partitioner = partitioner;
-        estimatedRowSize = rowSizes;
-        estimatedColumnCount = columnCounts;
     }
 
     static EstimatedHistogram defaultColumnHistogram()
@@ -114,16 +109,6 @@ public abstract class SSTable
     static EstimatedHistogram defaultRowHistogram()
     {
         return new EstimatedHistogram(150);
-    }
-
-    public EstimatedHistogram getEstimatedRowSize()
-    {
-        return estimatedRowSize;
-    }
-
-    public EstimatedHistogram getEstimatedColumnCount()
-    {
-        return estimatedColumnCount;
     }
 
     /**

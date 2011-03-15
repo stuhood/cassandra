@@ -45,7 +45,6 @@ import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class SSTableWriter extends SSTable implements Closeable
@@ -69,10 +68,8 @@ public class SSTableWriter extends SSTable implements Closeable
               new HashSet<Component>(Arrays.asList(Component.DATA, Component.FILTER, Component.PRIMARY_INDEX, Component.STATS)),
               metadata,
               replayPosition,
-              partitioner,
-              SSTable.defaultRowHistogram(),
-              SSTable.defaultColumnHistogram());
-        iwriter = new IndexWriter(descriptor, partitioner, keyCount);
+              partitioner);
+        iwriter = new IndexWriter(descriptor, partitioner, replayPosition, keyCount);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
         dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE, true);
     }
@@ -112,13 +109,13 @@ public class SSTableWriter extends SSTable implements Closeable
         return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
-    private void afterAppend(DecoratedKey decoratedKey, long dataPosition) throws IOException
+    private void afterAppend(DecoratedKey decoratedKey, long dataPosition, long dataSize, long columnCount) throws IOException
     {
         lastWrittenKey = decoratedKey;
 
         if (logger.isTraceEnabled())
             logger.trace("wrote " + decoratedKey + " at " + dataPosition);
-        iwriter.afterAppend(decoratedKey, dataPosition);
+        iwriter.afterAppend(decoratedKey, dataPosition, dataSize, columnCount);
         dbuilder.addPotentialBoundary(dataPosition);
     }
 
@@ -127,9 +124,7 @@ public class SSTableWriter extends SSTable implements Closeable
         long currentPosition = beforeAppend(row.key);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
         row.write(dataFile);
-        estimatedRowSize.add(dataFile.getFilePointer() - currentPosition);
-        estimatedColumnCount.add(row.columnCount());
-        afterAppend(row.key, currentPosition);
+        afterAppend(row.key, currentPosition, dataFile.getFilePointer() - currentPosition, row.columnCount());
         return currentPosition;
     }
 
@@ -150,11 +145,10 @@ public class SSTableWriter extends SSTable implements Closeable
         dataFile.writeLong(dataSize);
         // finally, reset for next row
         dataFile.seek(endPosition);
-        afterAppend(decoratedKey, startPosition);
-        estimatedRowSize.add(endPosition - startPosition);
-        estimatedColumnCount.add(columnCount);
+        afterAppend(decoratedKey, startPosition, endPosition - startPosition, columnCount);
     }
 
+    /** TODO: Appending with this method will result in an inaccurate column count. */
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
         long currentPosition = beforeAppend(decoratedKey);
@@ -162,7 +156,8 @@ public class SSTableWriter extends SSTable implements Closeable
         assert value.remaining() > 0;
         dataFile.writeLong(value.remaining());
         ByteBufferUtil.write(value, dataFile);
-        afterAppend(decoratedKey, currentPosition);
+        // see method javadoc
+        afterAppend(decoratedKey, currentPosition, value.remaining(), 0);
     }
 
     public void close() throws IOException
@@ -177,7 +172,7 @@ public class SSTableWriter extends SSTable implements Closeable
 
     public SSTableReader closeAndOpenReader(long maxDataAge) throws IOException
     {
-        // index and filter
+        // index, filter and statistics
         iwriter.close();
 
         // main data
@@ -185,31 +180,16 @@ public class SSTableWriter extends SSTable implements Closeable
         dataFile.close(); // calls force
         FileUtils.truncate(dataFile.getPath(), position);
 
-        // write sstable statistics
-        writeMetadata(descriptor, estimatedRowSize, estimatedColumnCount, replayPosition);
-
         // remove the 'tmp' marker from all components
         final Descriptor newdesc = rename(descriptor, components);
 
         // finalize in-memory state for the reader
         SegmentedFile ifile = iwriter.builder.complete(newdesc.filenameFor(SSTable.COMPONENT_INDEX));
         SegmentedFile dfile = dbuilder.complete(newdesc.filenameFor(SSTable.COMPONENT_DATA));
-        SSTableReader sstable = SSTableReader.internalOpen(newdesc, components, metadata, replayPosition, partitioner, ifile, dfile, iwriter.summary, iwriter.bf, maxDataAge, estimatedRowSize, estimatedColumnCount);
+        SSTableReader sstable = SSTableReader.internalOpen(newdesc, components, metadata, replayPosition, partitioner, ifile, dfile, iwriter.summary, iwriter.bf, maxDataAge, iwriter.estimatedRowSize, iwriter.estimatedColumnCount);
         iwriter = null;
         dbuilder = null;
         return sstable;
-    }
-
-    static void writeMetadata(Descriptor desc, EstimatedHistogram rowSizes, EstimatedHistogram columnCounts, ReplayPosition rp) throws IOException
-    {
-        BufferedRandomAccessFile out = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_STATS)),
-                                                                     "rw",
-                                                                     BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE,
-                                                                     true);
-        EstimatedHistogram.serializer.serialize(rowSizes, out);
-        EstimatedHistogram.serializer.serialize(columnCounts, out);
-        ReplayPosition.serializer.serialize(rp, out);
-        out.close();
     }
 
     static Descriptor rename(Descriptor tmpdesc, Set<Component> components)

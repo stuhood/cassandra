@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.commitlog.ReplayPosition;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
@@ -34,9 +35,10 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.utils.BloomFilter;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.EstimatedHistogram;
 
 /**
- * Encapsulates writing the index and filter for an SSTable. The state of this
+ * Encapsulates writing the index, filter and statistics for an SSTable. The state of this
  * object is not valid until it has been closed.
  */
 class IndexWriter implements Closeable
@@ -46,24 +48,33 @@ class IndexWriter implements Closeable
     private final BufferedRandomAccessFile indexFile;
     public final Descriptor desc;
     public final IPartitioner partitioner;
+    public final ReplayPosition replayPosition;
     public final SegmentedFile.Builder builder;
     public final IndexSummary summary;
     public final BloomFilter bf;
+    public final EstimatedHistogram estimatedRowSize;
+    public final EstimatedHistogram estimatedColumnCount;
+
     private FileMark mark;
 
-    IndexWriter(Descriptor desc, IPartitioner part, long keyCount) throws IOException
+    IndexWriter(Descriptor desc, IPartitioner part, ReplayPosition rp, long keyCount) throws IOException
     {
         this.desc = desc;
         this.partitioner = part;
+        this.replayPosition = rp;
         indexFile = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_INDEX)), "rw", 8 * 1024 * 1024, true);
         builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
         summary = new IndexSummary(keyCount);
         bf = BloomFilter.getFilter(keyCount, 15);
+        estimatedRowSize = SSTable.defaultRowHistogram();
+        estimatedColumnCount = SSTable.defaultColumnHistogram();
     }
 
-    public void afterAppend(DecoratedKey key, long dataPosition) throws IOException
+    public void afterAppend(DecoratedKey key, long dataPosition, long dataSize, long columnCount) throws IOException
     {
         bf.add(key.key);
+        estimatedRowSize.add(dataSize);
+        estimatedColumnCount.add(columnCount);
         long indexPosition = indexFile.getFilePointer();
         ByteBufferUtil.writeWithShortLength(key.key, indexFile);
         indexFile.writeLong(dataPosition);
@@ -91,6 +102,16 @@ class IndexWriter implements Closeable
         long position = indexFile.getFilePointer();
         indexFile.close(); // calls force
         FileUtils.truncate(indexFile.getPath(), position);
+
+        // statistics
+        BufferedRandomAccessFile out = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_STATS)),
+                                                                    "rw",
+                                                                    BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE,
+                                                                    true);
+        EstimatedHistogram.serializer.serialize(estimatedRowSize, out);
+        EstimatedHistogram.serializer.serialize(estimatedColumnCount, out);
+        ReplayPosition.serializer.serialize(replayPosition, out);
+        out.close();
 
         // finalize in-memory index state
         summary.complete();
