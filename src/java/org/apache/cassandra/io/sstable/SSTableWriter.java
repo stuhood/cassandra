@@ -69,7 +69,7 @@ public class SSTableWriter extends SSTable
               metadata,
               replayPosition,
               partitioner);
-        iwriter = new IndexWriter(descriptor, partitioner, replayPosition, keyCount);
+        iwriter = IndexWriter.create(descriptor, partitioner, replayPosition, keyCount);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
         dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE, true);
     }

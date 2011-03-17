@@ -41,11 +41,11 @@ import org.apache.cassandra.utils.EstimatedHistogram;
  * Encapsulates writing the index, filter and statistics for an SSTable. The state of this
  * object is not valid until it has been closed.
  */
-class IndexWriter
+abstract class IndexWriter
 {
-    private static Logger logger = LoggerFactory.getLogger(IndexWriter.class);
+    protected static Logger logger = LoggerFactory.getLogger(IndexWriter.class);
 
-    private final BufferedRandomAccessFile indexFile;
+    protected final BufferedRandomAccessFile indexFile;
     public final Descriptor desc;
     public final IPartitioner partitioner;
     public final ReplayPosition replayPosition;
@@ -57,7 +57,7 @@ class IndexWriter
 
     private FileMark mark;
 
-    IndexWriter(Descriptor desc, IPartitioner part, ReplayPosition rp, long keyCount) throws IOException
+    protected IndexWriter(Descriptor desc, IPartitioner part, ReplayPosition rp, long keyCount) throws IOException
     {
         this.desc = desc;
         this.partitioner = part;
@@ -70,24 +70,28 @@ class IndexWriter
         estimatedColumnCount = SSTable.defaultColumnHistogram();
     }
 
+    static IndexWriter create(Descriptor desc, IPartitioner part, ReplayPosition rp, long keyCount) throws IOException
+    {
+        return new BasicIndexWriter(desc, part, rp, keyCount);
+    }
+
     public void afterAppend(DecoratedKey key, long dataPosition, long dataSize, long columnCount) throws IOException
     {
         bf.add(key.key);
         estimatedRowSize.add(dataSize);
         estimatedColumnCount.add(columnCount);
-        long indexPosition = indexFile.getFilePointer();
-        ByteBufferUtil.writeWithShortLength(key.key, indexFile);
-        indexFile.writeLong(dataPosition);
-        if (logger.isTraceEnabled())
-            logger.trace("wrote index of " + key + " at " + indexPosition);
-
-        summary.maybeAddEntry(key, indexPosition);
-        builder.addPotentialBoundary(indexPosition);
+        builder.addPotentialBoundary(appendToIndex(key, dataPosition));
     }
 
     /**
-        * Closes the index and bloomfilter, making the public state of this writer valid for consumption.
-        */
+     * Appends the given key to the index file and returns the offset in the index file that
+     * it was written at.
+     */
+    protected abstract long appendToIndex(DecoratedKey key, long dataPosition) throws IOException;
+
+    /**
+     * Closes all components, making the public state of this writer valid for consumption.
+     */
     public void close() throws IOException
     {
         // bloom filter
@@ -102,6 +106,7 @@ class IndexWriter
         long position = indexFile.getFilePointer();
         indexFile.close(); // calls force
         FileUtils.truncate(indexFile.getPath(), position);
+        summary.complete();
 
         // statistics
         BufferedRandomAccessFile out = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_STATS)),
@@ -112,9 +117,6 @@ class IndexWriter
         EstimatedHistogram.serializer.serialize(estimatedColumnCount, out);
         ReplayPosition.serializer.serialize(replayPosition, out);
         out.close();
-
-        // finalize in-memory index state
-        summary.complete();
     }
 
     public void mark()
