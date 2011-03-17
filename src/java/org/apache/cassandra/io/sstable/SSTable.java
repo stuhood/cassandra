@@ -206,24 +206,6 @@ public abstract class SSTable
         return dfile.length() / (dataPosition / keys);
     }
 
-    /** @return An estimate of the number of keys contained in the given index file. */
-    static long estimateRowsFromIndex(RandomAccessReader ifile) throws IOException
-    {
-        // collect sizes for the first 10000 keys, or first 10 megabytes of data
-        final int SAMPLES_CAP = 10000, BYTES_CAP = (int)Math.min(10000000, ifile.length());
-        int keys = 0;
-        while (ifile.getFilePointer() < BYTES_CAP && keys < SAMPLES_CAP)
-        {
-            ByteBufferUtil.skipShortLength(ifile);
-            FileUtils.skipBytesFully(ifile, 8);
-            keys++;
-        }
-        assert keys > 0 && ifile.getFilePointer() > 0 && ifile.length() > 0 : "Unexpected empty index file: " + ifile;
-        long estimatedRows = ifile.length() / (ifile.getFilePointer() / keys);
-        ifile.seek(0);
-        return estimatedRows;
-    }
-
     public static long getTotalBytes(Iterable<SSTableReader> sstables)
     {
         long sum = 0;

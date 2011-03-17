@@ -22,10 +22,15 @@ package org.apache.cassandra.io.sstable;
 
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.dht.AbstractBounds;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * Two approaches to building an IndexSummary:
@@ -76,6 +81,36 @@ public class IndexSummary
     public void complete()
     {
         indexPositions.trimToSize();
+    }
+
+    /**
+     * @return The offset in indexPositions of the first key less than or equal to dk, or -1.
+     */
+    private int binarySearch(DecoratedKey dk)
+    {
+        int index = Collections.binarySearch(indexPositions, new KeyPosition(dk, -1));
+        if (index >= 0)
+            // exact match
+            return index;
+        // binary search gives us the first index _greater_ than the key searched for,
+        // i.e., its insertion position
+        int greaterThan = (index + 1) * -1;
+        if (greaterThan == 0)
+            return -1;
+        return greaterThan - 1;
+    }
+
+    /**
+     * @return The position in the index file to start scanning to find the given key
+     * (at most indexInterval keys away)
+     */
+    KeyPosition getIndexScanPosition(DecoratedKey decoratedKey)
+    {
+        int index = binarySearch(decoratedKey);
+        if (index == -1)
+            // given key is before the beginning of the file
+            return null;
+        return indexPositions.get(index);
     }
 
     /**

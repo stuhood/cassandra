@@ -33,33 +33,17 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.CloseableIterator;
 
-public class KeyIterator extends AbstractIterator<DecoratedKey> implements CloseableIterator<DecoratedKey>
+public abstract class KeyIterator extends AbstractIterator<DecoratedKey> implements CloseableIterator<DecoratedKey>
 {
-    private final RandomAccessReader in;
-    private final Descriptor desc;
+    protected final RandomAccessReader in;
+    protected final Descriptor desc;
 
-    public KeyIterator(Descriptor desc)
+    KeyIterator(Descriptor desc)
     {
         this.desc = desc;
         try
         {
             in = RandomAccessReader.open(new File(desc.filenameFor(SSTable.COMPONENT_INDEX)), true);
-        }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
-    }
-
-    protected DecoratedKey computeNext()
-    {
-        try
-        {
-            if (in.isEOF())
-                return endOfData();
-            DecoratedKey key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(in));
-            in.readLong(); // skip data position
-            return key;
         }
         catch (IOException e)
         {

@@ -207,7 +207,7 @@ public class SSTableExport
     throws IOException
     {
         Descriptor desc = Descriptor.fromFilename(ssTableFile);
-        KeyIterator iter = new KeyIterator(desc);
+        KeyIterator iter = SSTableReader.getKeyIterator(desc);
         DecoratedKey lastKey = null;
         while (iter.hasNext())
         {
