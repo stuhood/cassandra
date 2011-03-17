@@ -164,7 +164,7 @@ public class Rebuilder implements ICompactionInfo
             try
             {
                 estimatedRows = SSTableReader.estimateRowsFromData(desc, dfile);
-                iwriter = new IndexWriter(desc, StorageService.getPartitioner(), estimatedRows);
+                iwriter = IndexWriter.create(desc, StorageService.getPartitioner(), estimatedRows);
                 return estimatedRows;
             }
             catch(IOException e)

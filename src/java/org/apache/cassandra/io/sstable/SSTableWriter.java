@@ -67,7 +67,7 @@ public class SSTableWriter extends SSTable
               new HashSet<Component>(Arrays.asList(Component.DATA, Component.FILTER, Component.PRIMARY_INDEX, Component.STATS)),
               metadata,
               partitioner);
-        iwriter = new IndexWriter(descriptor, partitioner, keyCount);
+        iwriter = IndexWriter.create(descriptor, partitioner, keyCount);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
         dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", DatabaseDescriptor.getInMemoryCompactionLimit(), true);
     }

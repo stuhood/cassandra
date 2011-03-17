@@ -158,26 +158,6 @@ public class BasicReader extends SSTableReader
         dfile = dbuilder.complete(descriptor.filenameFor(Component.DATA));
     }
 
-    /** get the position in the index file to start scanning to find the given key (at most indexInterval keys away) */
-    private IndexSummary.KeyPosition getIndexScanPosition(DecoratedKey decoratedKey)
-    {
-        assert indexSummary.getIndexPositions() != null && indexSummary.getIndexPositions().size() > 0;
-        int index = Collections.binarySearch(indexSummary.getIndexPositions(), new IndexSummary.KeyPosition(decoratedKey, -1));
-        if (index < 0)
-        {
-            // binary search gives us the first index _greater_ than the key searched for,
-            // i.e., its insertion position
-            int greaterThan = (index + 1) * -1;
-            if (greaterThan == 0)
-                return null;
-            return indexSummary.getIndexPositions().get(greaterThan - 1);
-        }
-        else
-        {
-            return indexSummary.getIndexPositions().get(index);
-        }
-    }
-
     @Override
     protected long getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op)
     {
