@@ -142,7 +142,7 @@ public class Rebuilder implements CompactionInfo.Holder
             long estimatedRows;
             try
             {
-                estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
+                estimatedRows = SSTableReader.estimateRowsFromData(desc, dfile);
                 iwriter = new IndexWriter(desc, StorageService.getPartitioner(), ReplayPosition.NONE, estimatedRows);
                 return estimatedRows;
             }
