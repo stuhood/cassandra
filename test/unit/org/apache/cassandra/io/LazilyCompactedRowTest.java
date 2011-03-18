@@ -34,14 +34,10 @@ import java.util.concurrent.ExecutionException;
 
 import org.apache.cassandra.CleanupHelper;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ColumnFamily;
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.CompactionManager;
-import org.apache.cassandra.db.IColumn;
-import org.apache.cassandra.db.RowMutation;
-import org.apache.cassandra.db.Table;
+import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.io.sstable.IndexHelper;
+import org.apache.cassandra.io.sstable.Observer;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.MappedFileDataInput;
@@ -61,6 +57,11 @@ public class LazilyCompactedRowTest extends CleanupHelper
         CompactionController controller = new CompactionController(cfs, sstables, major, gcBefore, false);
         CompactionIterator ci1 = new PreCompactingIterator(sstables, controller);
         CompactionIterator ci2 = new LazyCompactionIterator(sstables, controller);
+ 
+        // observe all content via size threshold of 1 byte (would otherwise be used for indexing)
+        int depth = cfs.metadata.cfType == ColumnFamilyType.Super ? 3 : 2;
+        Observer obs1 = new AllObserver(depth);
+        Observer obs2 = new AllObserver(depth);
 
         while (true)
         {
@@ -72,20 +73,22 @@ public class LazilyCompactedRowTest extends CleanupHelper
 
             AbstractCompactedRow row1 = ci1.next();
             AbstractCompactedRow row2 = ci2.next();
-            DataOutputBuffer out1 = new DataOutputBuffer();
-            DataOutputBuffer out2 = new DataOutputBuffer();
-            row1.write(out1);
-            row2.write(out2);
 
+            // flush each row to a temporary file
             File tmpFile1 = File.createTempFile("lcrt1", null);
             File tmpFile2 = File.createTempFile("lcrt2", null);
-
             tmpFile1.deleteOnExit();
             tmpFile2.deleteOnExit();
+            RandomAccessFile out1 = new RandomAccessFile(tmpFile1, "rw");
+            RandomAccessFile out2 = new RandomAccessFile(tmpFile2, "rw");
+            row1.write(out1, obs1);
+            row2.write(out2, obs2);
+            long out1Length = out1.length();
+            long out2Length = out2.length();
+            out1.close();
+            out2.close();
 
-            new FileOutputStream(tmpFile1).write(out1.getData()); // writing data from row1
-            new FileOutputStream(tmpFile2).write(out2.getData()); // writing data from row2
-
+            // and reopen as mapped
             MappedFileDataInput in1 = new MappedFileDataInput(new FileInputStream(tmpFile1), tmpFile1.getAbsolutePath(), 0);
             MappedFileDataInput in2 = new MappedFileDataInput(new FileInputStream(tmpFile2), tmpFile2.getAbsolutePath(), 0);
 
@@ -94,8 +97,8 @@ public class LazilyCompactedRowTest extends CleanupHelper
             // row size can differ b/c of bloom filter counts being different
             long rowSize1 = SSTableReader.readRowSize(in1, sstables.iterator().next().descriptor);
             long rowSize2 = SSTableReader.readRowSize(in2, sstables.iterator().next().descriptor);
-            assertEquals(out1.getLength(), rowSize1 + 8);
-            assertEquals(out2.getLength(), rowSize2 + 8);
+            assertEquals(out1Length, rowSize1 + 8);
+            assertEquals(out2Length, rowSize2 + 8);
             // bloom filter
             IndexHelper.defreezeBloomFilter(in1, rowSize1, false);
             IndexHelper.defreezeBloomFilter(in2, rowSize2, false);
@@ -129,6 +132,10 @@ public class LazilyCompactedRowTest extends CleanupHelper
             assert in1.available() == 0;
             assert in2.available() == 0;
         }
+        assertEquals(obs1.keys, obs2.keys);
+        assertEquals(obs1.names, obs2.names);
+        // offsets can differ because of bloom filter counts being different
+        // assertEquals(obs1.offsets, obs2.offsets);
     }
     
     private void assertDigest(ColumnFamilyStore cfs, int gcBefore, boolean major) throws IOException, NoSuchAlgorithmException
@@ -304,6 +311,18 @@ public class LazilyCompactedRowTest extends CleanupHelper
         assertBytes(cfs, Integer.MAX_VALUE, true);
     }
 
+    private static class AllObserver extends Observer
+    {
+        public AllObserver(int depth)
+        {
+            super(depth, 128, 1, 0);
+        }
+        
+        public boolean shouldAdd(int depth, boolean last)
+        {
+            return true;
+        }
+    }
 
     private static class LazyCompactionIterator extends CompactionIterator
     {

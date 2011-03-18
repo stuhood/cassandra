@@ -39,6 +39,9 @@ import org.apache.cassandra.utils.EstimatedHistogram;
 /**
  * Encapsulates writing the index, filter and statistics for an SSTable. The state of this
  * object is not valid until it has been closed.
+ *
+ * For every tuple in a file, a consumer should call (with the depth of the tuple as a parameter):
+ * shouldAppend, [append], increment
  */
 abstract class IndexWriter
 {
@@ -54,6 +57,12 @@ abstract class IndexWriter
     public final EstimatedHistogram estimatedColumnCount;
 
     private FileMark mark;
+    /**
+     * TODO: both IndexSummary and IndexWriter track the number of items, because
+     * IndexSummary is used independently when loading an index from disk: should
+     * find a way to split the tracking out.
+     */
+    private long[] written;
 
     protected IndexWriter(Descriptor desc, IPartitioner part, long keyCount) throws IOException
     {
@@ -61,30 +70,41 @@ abstract class IndexWriter
         this.partitioner = part;
         indexFile = new BufferedRandomAccessFile(new File(desc.filenameFor(SSTable.COMPONENT_INDEX)), "rw", 8 * 1024 * 1024, true);
         builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
-        summary = new IndexSummary(desc.ksname, desc.cfname, keyCount);
+        summary = new IndexSummary(keyCount);
         bf = BloomFilter.getFilter(keyCount, 15);
         estimatedRowSize = SSTable.defaultRowHistogram();
         estimatedColumnCount = SSTable.defaultColumnHistogram();
     }
 
-    static IndexWriter create(Descriptor desc, IPartitioner part, long keyCount) throws IOException
+    static IndexWriter create(Descriptor desc, CFMetaData meta, IPartitioner part, long keyCount) throws IOException
     {
         return new BasicIndexWriter(desc, part, keyCount);
     }
 
-    public void afterAppend(DecoratedKey key, long dataPosition, long dataSize, long columnCount) throws IOException
+    /** @return An Observer to collect values from the data file. */
+    public abstract Observer observer();
+
+    /**
+     * Appends the content of an Observer for a row and resets it for reuse.
+     * TODO: Once we are using a block based data file format, the unit of observation
+     * should be a block.
+     */
+    public void append(Observer observer, long dataSize) throws IOException
     {
+        // assuming a single key/row per observer
+        DecoratedKey key = observer.keys.get(0);
         bf.add(key.key);
         estimatedRowSize.add(dataSize);
-        estimatedColumnCount.add(columnCount);
-        builder.addPotentialBoundary(appendToIndex(key, dataPosition));
+        // the observer has been incremented for every entry
+        estimatedColumnCount.add(observer.count());
+        appendToIndex(observer, dataSize);
+        observer.reset(true);
     }
 
     /**
-     * Appends the given key to the index file and returns the offset in the index file that
-     * it was written at.
+     * Appends an observer containing content for a row to the index file.
      */
-    protected abstract long appendToIndex(DecoratedKey key, long dataPosition) throws IOException;
+    protected abstract void appendToIndex(Observer observer, long dataSize) throws IOException;
 
     /**
      * Closes all components, making the public state of this writer valid for consumption.
@@ -117,14 +137,11 @@ abstract class IndexWriter
 
     public void mark()
     {
-        mark = indexFile.mark();
+        // nothing to do: a row is added in one go using append(Observer)
     }
 
     public void reset() throws IOException
     {
-        // we can't un-set the bloom filter addition, but extra keys in there are harmless.
-        // we can't reset dbuilder either, but that is the last thing called in afterappend so
-        // we assume that if that worked then we won't be trying to reset.
-        indexFile.reset(mark);
+        // nothing to do: a row is added in one go using append(Observer)
     }
 }

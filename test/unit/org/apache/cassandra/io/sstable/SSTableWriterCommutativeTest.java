@@ -130,9 +130,9 @@ public class SSTableWriterCommutativeTest extends CleanupHelper
 
         while(origFile.getFilePointer() < origFile.length() && cleanedFile.getFilePointer() < cleanedFile.length())
         {
-            assert origFile.readByte() == cleanedFile.readByte();
+            assertEquals("At " + origFile.getFilePointer(), origFile.readByte(), cleanedFile.readByte());
         }
-        assert origFile.getFilePointer() == origFile.length();
-        assert cleanedFile.getFilePointer() == cleanedFile.length();
+        assertEquals(origFile.getFilePointer(), origFile.length());
+        assertEquals(cleanedFile.getFilePointer(), cleanedFile.length());
     }
 }

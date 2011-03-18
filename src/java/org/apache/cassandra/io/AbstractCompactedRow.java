@@ -23,9 +23,11 @@ package org.apache.cassandra.io;
 
 import java.io.DataOutput;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.security.MessageDigest;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.io.sstable.Observer;
 
 /**
  * a CompactedRow is an object that takes a bunch of rows (keys + columnfamilies)
@@ -44,7 +46,7 @@ public abstract class AbstractCompactedRow
     /**
      * write the row (size + column index + filter + column data, but NOT row key) to @param out
      */
-    public abstract void write(DataOutput out) throws IOException;
+    public abstract void write(RandomAccessFile out, Observer rowObserver) throws IOException;
 
     /**
      * update @param digest with the data bytes of the row (not including row key or row size)

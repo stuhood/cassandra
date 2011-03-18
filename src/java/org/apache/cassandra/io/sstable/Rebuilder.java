@@ -164,7 +164,7 @@ public class Rebuilder implements ICompactionInfo
             try
             {
                 estimatedRows = SSTableReader.estimateRowsFromData(desc, dfile);
-                iwriter = IndexWriter.create(desc, StorageService.getPartitioner(), estimatedRows);
+                iwriter = IndexWriter.create(desc, metadata, StorageService.getPartitioner(), estimatedRows);
                 return estimatedRows;
             }
             catch(IOException e)
@@ -205,22 +205,26 @@ public class Rebuilder implements ICompactionInfo
             DecoratedKey key;
             long rowPosition = 0;
             long nextRowPosition = 0;
+            Observer rowObserver = iwriter.observer();
+            ColumnFamily emptyCf = ColumnFamily.create(metadata);
             while (rowPosition < dfile.length())
             {
                 // read key
                 key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(dfile));
+                rowObserver.add(key, rowPosition);
 
                 // determine where the row ends
                 long dataSize = SSTableReader.readRowSize(dfile, desc);
                 nextRowPosition = dfile.getFilePointer() + dataSize;
-                
+
                 IndexHelper.skipBloomFilter(dfile);
                 IndexHelper.skipIndex(dfile);
-                ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(metadata), dfile);
-                long columnCount = dfile.readInt();
+                ColumnFamily.serializer().deserializeFromSSTableNoColumns(emptyCf, dfile);
+                // observe the column data of the row
+                ColumnFamily.serializer().observeColumnsInSSTable(key, emptyCf, dfile, rowObserver);
 
                 // append row info to the index and move to the next row
-                iwriter.afterAppend(key, rowPosition, dataSize, columnCount);
+                iwriter.append(rowObserver, dataSize);
                 rowPosition = nextRowPosition;
                 dfile.seek(rowPosition);
                 rows++;
@@ -255,6 +259,7 @@ public class Rebuilder implements ICompactionInfo
         {
             long rows = 0L;
             DecoratedKey key;
+            Observer rowObserver = iwriter.observer();
 
             CompactionController controller = CompactionController.getBasicController(true);
 
@@ -280,10 +285,11 @@ public class Rebuilder implements ICompactionInfo
                 }
 
                 // update index writer
-                iwriter.afterAppend(key, writerDfile.getFilePointer(), dataSize, row.columnCount());
                 // write key and row
+                rowObserver.add(key, writerDfile.getFilePointer());
                 ByteBufferUtil.writeWithShortLength(key.key, writerDfile);
-                row.write(writerDfile);
+                row.write(writerDfile, rowObserver);
+                iwriter.append(rowObserver, dataSize);
 
                 rows++;
             }

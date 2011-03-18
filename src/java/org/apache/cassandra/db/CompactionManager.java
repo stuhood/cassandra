@@ -18,10 +18,7 @@
 
 package org.apache.cassandra.db;
 
-import java.io.DataOutput;
-import java.io.File;
-import java.io.IOError;
-import java.io.IOException;
+import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
@@ -1141,11 +1138,12 @@ public class CompactionManager implements CompactionManagerMBean
             this.row = row;
         }
 
-        public void write(DataOutput out) throws IOException
+        public void write(RandomAccessFile out, org.apache.cassandra.io.sstable.Observer rowObserver) throws IOException
         {
             assert row.dataSize > 0;
             out.writeLong(row.dataSize);
             row.echoData(out);
+            throw new RuntimeException("FIXME: Not implemented: ideally would copy the index entr(y|ies) for this row to the Observer.");
         }
 
         public void update(MessageDigest digest)

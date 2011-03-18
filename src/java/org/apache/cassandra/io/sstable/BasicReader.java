@@ -141,7 +141,6 @@ public class BasicReader extends SSTableReader
                     if (cacheLoading && keysToLoadInCache.contains(decoratedKey))
                         cacheKey(decoratedKey, dataPosition);
                 }
-
                 indexSummary.incrementRowid();
                 ibuilder.addPotentialBoundary(indexPosition);
                 dbuilder.addPotentialBoundary(dataPosition);
