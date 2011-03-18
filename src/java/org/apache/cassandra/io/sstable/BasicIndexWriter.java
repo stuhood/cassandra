@@ -39,6 +39,7 @@ import org.apache.cassandra.utils.EstimatedHistogram;
 
 /**
  * Writes the legacy sstable index, which contained only keys and long offsets.
+ * Implements shouldAppend and appendToIndex such that only key entries are added.
  */
 class BasicIndexWriter extends IndexWriter
 {
@@ -47,15 +48,33 @@ class BasicIndexWriter extends IndexWriter
         super(desc, part, rp, keyCount);
     }
 
+    /** @return An Observer to collect only the keys. */
     @Override
-    protected long appendToIndex(DecoratedKey key, long dataPosition) throws IOException
+    public Observer observer()
     {
+        return new Observer(1, 1, DatabaseDescriptor.getColumnIndexSize(), Long.MAX_VALUE)
+        {
+            /** Collect the first entry at depth 0. */
+            public boolean shouldAdd(int depth, boolean last)
+            {
+                return depth == 0 && !last;
+            }
+        };
+    }
+
+    @Override
+    protected void appendToIndex(Observer observer, long dataSize) throws IOException
+    {
+        DecoratedKey key = observer.keys.get(0);
+        long dataPosition = observer.offsets.get(0);
         long indexPosition = indexFile.getFilePointer();
         ByteBufferUtil.writeWithShortLength(key.key, indexFile);
+        // write the position of the data to the index
         indexFile.writeLong(dataPosition);
+        long indexDataSize = indexFile.getFilePointer() - indexPosition;
         if (logger.isTraceEnabled())
             logger.trace("wrote index of " + key + " at " + indexPosition);
         summary.maybeAddEntry(key, indexPosition);
-        return indexPosition;
+        builder.addPotentialBoundary(indexPosition);
     }
 }

@@ -24,7 +24,10 @@ package org.apache.cassandra.db;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.util.Collection;
+import java.util.Iterator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.io.ICompactSerializer2;
 import org.apache.cassandra.io.ICompactSerializer3;
+import org.apache.cassandra.io.sstable.Observer;
 
 public class ColumnFamilySerializer implements ICompactSerializer3<ColumnFamily>
 {
@@ -66,32 +70,50 @@ public class ColumnFamilySerializer implements ICompactSerializer3<ColumnFamily>
 
             dos.writeBoolean(true);
             dos.writeInt(columnFamily.id());
-        }
-        catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-        serializeForSSTable(columnFamily, dos);
-    }
-
-    public int serializeForSSTable(ColumnFamily columnFamily, DataOutput dos)
-    {
-        try
-        {
             serializeCFInfo(columnFamily, dos);
 
             Collection<IColumn> columns = columnFamily.getSortedColumns();
-            int count = columns.size();
-            dos.writeInt(count);
+            dos.writeInt(columns.size());
             for (IColumn column : columns)
-            {
                 columnFamily.getColumnSerializer().serialize(column, dos);
-            }
-            return count;
         }
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    public void serializeForSSTable(ColumnFamily cf, RandomAccessFile out, Observer observer) throws IOException
+    {
+        // write placeholder for the row size, since we don't know it yet
+        long sizePosition = out.getFilePointer();
+        out.writeLong(-1);
+        // write out the row index, and then the row content
+        ColumnIndexer.serialize(cf, out);
+        serializeContentForSSTable(cf, out, observer);
+        // seek back and write the row size (not including the size Long itself)
+        long endPosition = out.getFilePointer();
+        out.seek(sizePosition);
+        long dataSize = endPosition - (sizePosition + 8);
+        assert dataSize > 0;
+        out.writeLong(dataSize);
+        // finally, reset for next row
+        out.seek(endPosition);
+    }
+
+    private void serializeContentForSSTable(ColumnFamily cf, RandomAccessFile dos, Observer observer) throws IOException
+    {
+        serializeCFInfo(cf, dos);
+        Collection<IColumn> columns = cf.getSortedColumns();
+        dos.writeInt(columns.size());
+        for (Iterator<IColumn> iter = columns.iterator(); iter.hasNext();)
+        {
+            IColumn column = iter.next();
+            long offset = dos.getFilePointer();
+            cf.getColumnSerializer().serialize(column, dos);
+            if (observer.shouldAdd(1, !iter.hasNext()))
+                observer.add(1, column.name(), offset);
+            observer.increment(dos.getFilePointer() - offset);
         }
     }
 
@@ -99,12 +121,6 @@ public class ColumnFamilySerializer implements ICompactSerializer3<ColumnFamily>
     {
         dos.writeInt(columnFamily.localDeletionTime.get());
         dos.writeLong(columnFamily.markedForDeleteAt.get());
-    }
-
-    public int serializeWithIndexes(ColumnFamily columnFamily, DataOutput dos)
-    {
-        ColumnIndexer.serialize(columnFamily, dos);
-        return serializeForSSTable(columnFamily, dos);
     }
 
     public ColumnFamily deserialize(DataInput dis) throws IOException
@@ -130,11 +146,29 @@ public class ColumnFamilySerializer implements ICompactSerializer3<ColumnFamily>
     public void deserializeColumns(DataInput dis, ColumnFamily cf, boolean intern, boolean fromRemote) throws IOException
     {
         int size = dis.readInt();
+        int expireBefore = (int) (System.currentTimeMillis() / 1000);
         ColumnFamilyStore interner = intern ? Table.open(CFMetaData.getCF(cf.id()).left).getColumnFamilyStore(cf.id()) : null;
         for (int i = 0; i < size; ++i)
         {
-            IColumn column = cf.getColumnSerializer().deserialize(dis, interner, fromRemote, (int) (System.currentTimeMillis() / 1000));
+            IColumn column = cf.getColumnSerializer().deserialize(dis, interner, fromRemote, expireBefore);
             cf.addColumn(column);
+        }
+    }
+
+    /**
+     * Observes columns in a single row, without adding them to the column family.
+     */
+    public void observeColumnsInSSTable(DecoratedKey key, ColumnFamily cf, RandomAccessFile dis, Observer observer) throws IOException
+    {
+        int size = dis.readInt();
+        int expireBefore = (int) (System.currentTimeMillis() / 1000);
+        for (int i = 0, last = size - 1; i < size; ++i)
+        {
+            long offset = dis.getFilePointer();
+            IColumn column = cf.getColumnSerializer().deserialize(dis, null, false, expireBefore);
+            if (observer.shouldAdd(1, i == last))
+                observer.add(1, column.name(), offset);
+            observer.increment(dis.getFilePointer() - offset);
         }
     }
 

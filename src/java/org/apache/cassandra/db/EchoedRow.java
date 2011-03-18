@@ -1,15 +1,15 @@
 package org.apache.cassandra.db;
 
-import java.io.DataOutput;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.security.MessageDigest;
 
 import org.apache.cassandra.io.AbstractCompactedRow;
+import org.apache.cassandra.io.sstable.Observer;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 
 /**
  * A CompactedRow implementation that just echos the original row bytes without deserializing.
- * Currently only used by cleanup.
  */
 public class EchoedRow extends AbstractCompactedRow
 {
@@ -21,7 +21,7 @@ public class EchoedRow extends AbstractCompactedRow
         this.row = row;
     }
 
-    public void write(DataOutput out) throws IOException
+    public void write(RandomAccessFile out, Observer observer) throws IOException
     {
         assert row.dataSize > 0;
         out.writeLong(row.dataSize);

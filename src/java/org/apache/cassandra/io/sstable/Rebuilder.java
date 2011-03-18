@@ -143,7 +143,7 @@ public class Rebuilder implements CompactionInfo.Holder
             try
             {
                 estimatedRows = SSTableReader.estimateRowsFromData(desc, dfile);
-                iwriter = IndexWriter.create(desc, StorageService.getPartitioner(), ReplayPosition.NONE, estimatedRows);
+                iwriter = IndexWriter.create(desc, cfs.metadata, StorageService.getPartitioner(), ReplayPosition.NONE, estimatedRows);
                 return estimatedRows;
             }
             catch(IOException e)
@@ -231,25 +231,31 @@ public class Rebuilder implements CompactionInfo.Holder
             DecoratedKey key;
             long rowPosition = 0;
             long nextRowPosition = 0;
+            Observer rowObserver = iwriter.observer();
+            ColumnFamily emptyCf = ColumnFamily.create(cfs.metadata);
             while (rowPosition < dfile.length())
             {
                 // read key
                 key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(dfile));
+                rowObserver.add(key, rowPosition);
 
                 // determine where the row ends
                 long dataSize = SSTableReader.readRowSize(dfile, desc);
                 nextRowPosition = dfile.getFilePointer() + dataSize;
-                
+
                 IndexHelper.skipBloomFilter(dfile);
                 IndexHelper.skipIndex(dfile);
-                ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(cfs.metadata), dfile);
+                ColumnFamily.serializer().deserializeFromSSTableNoColumns(emptyCf, dfile);
 
+                assert false : "FIXME: Rock and hard place";
+                // observe the column data of the row
+                ColumnFamily.serializer().observeColumnsInSSTable(key, emptyCf, dfile, rowObserver);
                 // don't move that statement around, it expects the dfile to be before the columns
                 updateCache(key, dataSize, null);
 
+
                 // append row info to the index and move to the next row
-                long columnCount = dfile.readInt();
-                iwriter.afterAppend(key, rowPosition, dataSize, columnCount);
+                iwriter.append(rowObserver, dataSize);
                 rowPosition = nextRowPosition;
                 dfile.seek(rowPosition);
                 rows++;
@@ -284,6 +290,7 @@ public class Rebuilder implements CompactionInfo.Holder
         {
             long rows = 0L;
             DecoratedKey key;
+            Observer rowObserver = iwriter.observer();
 
             CompactionController controller = new CompactionController(cfs, Collections.<SSTableReader>emptyList(), Integer.MAX_VALUE, true);
 
@@ -300,10 +307,11 @@ public class Rebuilder implements CompactionInfo.Holder
                 updateCache(key, dataSize, row);
 
                 // update index writer
-                iwriter.afterAppend(key, writerDfile.getFilePointer(), dataSize, row.columnCount());
                 // write key and row
+                rowObserver.add(key, writerDfile.getFilePointer());
                 ByteBufferUtil.writeWithShortLength(key.key, writerDfile);
-                row.write(writerDfile);
+                row.write(writerDfile, rowObserver);
+                iwriter.append(rowObserver, dataSize);
 
                 rows++;
             }

@@ -52,6 +52,8 @@ public class SSTableWriter extends SSTable
     private static Logger logger = LoggerFactory.getLogger(SSTableWriter.class);
 
     private IndexWriter iwriter;
+    // collects positions of tuples within rows
+    private Observer rowObserver;
     private SegmentedFile.Builder dbuilder;
     private final BufferedRandomAccessFile dataFile;
     private DecoratedKey lastWrittenKey;
@@ -69,7 +71,8 @@ public class SSTableWriter extends SSTable
               metadata,
               replayPosition,
               partitioner);
-        iwriter = IndexWriter.create(descriptor, partitioner, replayPosition, keyCount);
+        iwriter = IndexWriter.create(descriptor, metadata, partitioner, replayPosition, keyCount);
+        rowObserver = iwriter.observer();
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
         dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE, true);
     }
@@ -86,6 +89,7 @@ public class SSTableWriter extends SSTable
         {
             dataFile.reset(dataMark);
             iwriter.reset();
+            rowObserver.reset(false);
         }
         catch (IOException e)
         {
@@ -106,58 +110,49 @@ public class SSTableWriter extends SSTable
             logger.info("Writing into file " + getFilename());
             throw new IOException("Keys must be written in ascending order.");
         }
-        return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
+        long position = (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
+        if (rowObserver.shouldAdd(0, false))
+            rowObserver.add(decoratedKey, position);
+        return position;
     }
 
-    private void afterAppend(DecoratedKey decoratedKey, long dataPosition, long dataSize, long columnCount) throws IOException
+    private void afterAppend(DecoratedKey key, long startPosition) throws IOException
     {
-        lastWrittenKey = decoratedKey;
-
+        long dataSize = dataFile.getFilePointer() - startPosition;
         if (logger.isTraceEnabled())
-            logger.trace("wrote " + decoratedKey + " at " + dataPosition);
-        iwriter.afterAppend(decoratedKey, dataPosition, dataSize, columnCount);
-        dbuilder.addPotentialBoundary(dataPosition);
+            logger.trace("wrote row starting at " + startPosition);
+        iwriter.append(rowObserver, dataSize);
+        dbuilder.addPotentialBoundary(startPosition);
+        lastWrittenKey = key;
     }
 
     public long append(AbstractCompactedRow row) throws IOException
     {
-        long currentPosition = beforeAppend(row.key);
+        long startPosition = beforeAppend(row.key);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
-        row.write(dataFile);
-        afterAppend(row.key, currentPosition, dataFile.getFilePointer() - currentPosition, row.columnCount());
-        return currentPosition;
+        row.write(dataFile, rowObserver);
+        afterAppend(row.key, startPosition);
+        return startPosition;
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
     {
         long startPosition = beforeAppend(decoratedKey);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
-        // write placeholder for the row size, since we don't know it yet
-        long sizePosition = dataFile.getFilePointer();
-        dataFile.writeLong(-1);
-        // write out row data
-        int columnCount = ColumnFamily.serializer().serializeWithIndexes(cf, dataFile);
-        // seek back and write the row size (not including the size Long itself)
-        long endPosition = dataFile.getFilePointer();
-        dataFile.seek(sizePosition);
-        long dataSize = endPosition - (sizePosition + 8);
-        assert dataSize > 0;
-        dataFile.writeLong(dataSize);
-        // finally, reset for next row
-        dataFile.seek(endPosition);
-        afterAppend(decoratedKey, startPosition, endPosition - startPosition, columnCount);
+        ColumnFamily.serializer().serializeForSSTable(cf, dataFile, rowObserver);
+        afterAppend(decoratedKey, startPosition);
     }
 
-    /** TODO: Appending with this method will result in an inaccurate column count. */
+    @Deprecated
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
-        long currentPosition = beforeAppend(decoratedKey);
+        long startPosition = beforeAppend(decoratedKey);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
         assert value.remaining() > 0;
         dataFile.writeLong(value.remaining());
         ByteBufferUtil.write(value, dataFile);
-        // see method javadoc
-        afterAppend(decoratedKey, currentPosition, value.remaining(), 0);
+        afterAppend(decoratedKey, startPosition);
+        logger.warn("Appended " + decoratedKey + " as an unindexable blob.");
     }
 
     public SSTableReader closeAndOpenReader() throws IOException

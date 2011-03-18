@@ -24,6 +24,7 @@ package org.apache.cassandra.io;
 import java.io.DataOutput;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.List;
@@ -37,6 +38,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ColumnIndexer;
 import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.io.sstable.Observer;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.util.DataOutputBuffer;
@@ -89,18 +91,10 @@ public class PrecompactedRow extends AbstractCompactedRow
         }
     }
 
-    public void write(DataOutput out) throws IOException
+    public void write(RandomAccessFile out, Observer rowObserver) throws IOException
     {
-        if (compactedCf != null)
-        {
-            DataOutputBuffer buffer = new DataOutputBuffer();
-            DataOutputBuffer headerBuffer = new DataOutputBuffer();
-            ColumnIndexer.serialize(compactedCf, headerBuffer);
-            ColumnFamily.serializer().serializeForSSTable(compactedCf, buffer);
-            out.writeLong(headerBuffer.getLength() + buffer.getLength());
-            out.write(headerBuffer.getData(), 0, headerBuffer.getLength());
-            out.write(buffer.getData(), 0, buffer.getLength());
-        }
+        assert compactedCf != null : key + " for " + out;
+        ColumnFamily.serializer().serializeForSSTable(compactedCf, out, rowObserver);
     }
 
     public void update(MessageDigest digest)

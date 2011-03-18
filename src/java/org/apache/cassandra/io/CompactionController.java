@@ -75,9 +75,13 @@ public class CompactionController
         return isMajor || !cfs.isKeyInRemainingSSTables(key, sstables);
     }
 
-    public boolean needDeserialize()
+    public boolean needDeserialize(long size)
     {
         if (forceDeserialize)
+            return true;
+
+        if (size > DatabaseDescriptor.getColumnIndexSize())
+            // must deserialize for indexing observation
             return true;
 
         for (SSTableReader sstable : sstables)
@@ -114,7 +118,7 @@ public class CompactionController
      */
     public AbstractCompactedRow getCompactedRow(List<SSTableIdentityIterator> rows)
     {
-        if (rows.size() == 1 && !needDeserialize())
+        if (rows.size() == 1 && !needDeserialize(rows.get(0).dataSize))
             return new EchoedRow(rows.get(0));
 
         long rowSize = 0;

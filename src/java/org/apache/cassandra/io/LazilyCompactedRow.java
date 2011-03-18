@@ -24,6 +24,8 @@ package org.apache.cassandra.io;
 import java.io.DataOutput;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.*;
 
@@ -37,6 +39,7 @@ import org.apache.cassandra.db.ColumnIndexer;
 import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.Observer;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.util.DataOutputBuffer;
@@ -91,7 +94,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         iter = null;
     }
 
-    public void write(DataOutput out) throws IOException
+    public void write(RandomAccessFile out, Observer observer) throws IOException
     {
         DataOutputBuffer clockOut = new DataOutputBuffer();
         ColumnFamily.serializer().serializeCFInfo(emptyColumnFamily, clockOut);
@@ -103,11 +106,14 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         out.write(clockOut.getData(), 0, clockOut.getLength());
         out.writeInt(columnCount);
 
-        Iterator<IColumn> iter = iterator();
-        while (iter.hasNext())
+        for (Iterator<IColumn> iter = iterator(); iter.hasNext();)
         {
             IColumn column = iter.next();
+            long offset = out.getFilePointer();
             emptyColumnFamily.getColumnSerializer().serialize(column, out);
+            if (observer.shouldAdd(1, !iter.hasNext()))
+                observer.add(1, column.name(), offset);
+            observer.increment(out.getFilePointer() - offset);
         }
     }
 
