@@ -38,7 +38,7 @@ import org.apache.cassandra.utils.Pair;
 public class Descriptor
 {
     public static final String LEGACY_VERSION = "a";
-    public static final String CURRENT_VERSION = "f";
+    public static final String CURRENT_VERSION = "g";
 
     public final File directory;
     public final String version;
@@ -53,6 +53,7 @@ public class Descriptor
     public final boolean hasEncodedKeys;
     public final boolean isLatestVersion;
     public final boolean usesOldBloomFilter;
+    public final boolean hasBasicIndex;
 
     /**
      * A descriptor that assumes CURRENT_VERSION.
@@ -77,6 +78,7 @@ public class Descriptor
         hasIntRowSize = version.compareTo("d") < 0;
         hasEncodedKeys = version.compareTo("e") < 0;
         usesOldBloomFilter = version.compareTo("f") < 0;
+        hasBasicIndex = version.compareTo("g") < 0;
         isLatestVersion = version.compareTo(CURRENT_VERSION) == 0;
     }
 

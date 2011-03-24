@@ -509,6 +509,11 @@ public class CompactionManager implements CompactionManagerMBean
 
         for (final SSTableReader sstable : cfs.getSSTables())
         {
+            if (!sstable.descriptor.hasBasicIndex)
+            {
+                logger.warn("FIXME: Scrub not implemented for " + sstable.descriptor);
+                continue;
+            }
             logger.info("Scrubbing " + sstable);
 
             // Calculate the expected compacted filesize
