@@ -75,7 +75,9 @@ abstract class IndexWriter
 
     static IndexWriter create(Descriptor desc, CFMetaData meta, IPartitioner part, ReplayPosition rp, long keyCount) throws IOException
     {
-        return new BasicIndexWriter(desc, part, rp, keyCount);
+        if (desc.hasBasicIndex)
+            return new BasicIndexWriter(desc, part, rp, keyCount);
+        return new NestedIndexWriter(desc, meta, part, rp, keyCount);
     }
 
     /** @return An Observer to collect values from the data file. */
@@ -104,10 +106,17 @@ abstract class IndexWriter
     protected abstract void appendToIndex(Observer observer, long dataSize) throws IOException;
 
     /**
+     * Flushes the state of the index writer.
+     */
+    protected void flush() throws IOException {}
+
+    /**
      * Closes all components, making the public state of this writer valid for consumption.
      */
     public void close() throws IOException
     {
+        flush();
+        
         // bloom filter
         FileOutputStream fos = new FileOutputStream(desc.filenameFor(SSTable.COMPONENT_FILTER));
         DataOutputStream stream = new DataOutputStream(fos);

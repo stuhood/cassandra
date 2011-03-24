@@ -636,6 +636,11 @@ public class CompactionManager implements CompactionManagerMBean
 
         for (final SSTableReader sstable : sstables)
         {
+            if (!sstable.descriptor.hasBasicIndex)
+            {
+                logger.warn("FIXME: Scrub not implemented for " + sstable.descriptor);
+                continue;
+            }
             logger.info("Scrubbing " + sstable);
             CompactionController controller = new CompactionController(cfs, Collections.singletonList(sstable), getDefaultGcBefore(cfs), true);
 

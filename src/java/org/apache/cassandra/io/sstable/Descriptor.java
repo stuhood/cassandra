@@ -53,6 +53,7 @@ public class Descriptor
     public final boolean hasEncodedKeys;
     public final boolean isLatestVersion;
     public final boolean usesOldBloomFilter;
+    public final boolean hasBasicIndex;
 
     /**
      * A descriptor that assumes CURRENT_VERSION.
@@ -77,6 +78,7 @@ public class Descriptor
         hasIntRowSize = version.compareTo("d") < 0;
         hasEncodedKeys = version.compareTo("e") < 0;
         usesOldBloomFilter = version.compareTo("f") < 0;
+        hasBasicIndex = version.compareTo("g") < 0;
         isLatestVersion = version.compareTo(CURRENT_VERSION) == 0;
     }
 
@@ -85,12 +87,18 @@ public class Descriptor
         return version.compareTo("g") >= 0;
     }
 
+    public File fileFor(Component component)
+    {
+        // we should prematerialize component filenames for the common components
+        return new File(filenameFor(component.name()));
+    }
+
     public String filenameFor(Component component)
     {
         return filenameFor(component.name());
     }
     
-    private String baseFilename()
+    private StringBuilder baseFilename()
     {
         StringBuilder buff = new StringBuilder();
         buff.append(directory).append(File.separatorChar);
@@ -100,7 +108,7 @@ public class Descriptor
         if (!LEGACY_VERSION.equals(version))
             buff.append(version).append("-");
         buff.append(generation);
-        return buff.toString();
+        return buff;
     }
 
     /**
@@ -109,7 +117,7 @@ public class Descriptor
      */
     public String filenameFor(String suffix)
     {
-        return baseFilename() + "-" + suffix;
+        return baseFilename().append('-').append(suffix).toString();
     }
 
     /**
@@ -193,7 +201,7 @@ public class Descriptor
     @Override
     public String toString()
     {
-        return baseFilename();
+        return baseFilename().toString();
     }
 
     @Override
