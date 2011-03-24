@@ -85,7 +85,7 @@ public class Descriptor
         return filenameFor(component.name());
     }
     
-    private String baseFilename()
+    private StringBuilder baseFilename()
     {
         StringBuilder buff = new StringBuilder();
         buff.append(directory).append(File.separatorChar);
@@ -95,7 +95,7 @@ public class Descriptor
         if (!LEGACY_VERSION.equals(version))
             buff.append(version).append("-");
         buff.append(generation);
-        return buff.toString();
+        return buff;
     }
 
     /**
@@ -104,7 +104,7 @@ public class Descriptor
      */
     public String filenameFor(String suffix)
     {
-        return baseFilename() + "-" + suffix;
+        return baseFilename().append('-').append(suffix).toString();
     }
 
     /**
@@ -188,7 +188,7 @@ public class Descriptor
     @Override
     public String toString()
     {
-        return baseFilename();
+        return baseFilename().toString();
     }
 
     @Override

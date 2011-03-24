@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import org.junit.Test;
+import static junit.framework.Assert.assertEquals;
 
 import org.apache.cassandra.CleanupHelper;
 import org.apache.cassandra.Util;
@@ -106,8 +107,7 @@ public class KeyCacheTest extends CleanupHelper
         ColumnFamilyStore store = table.getColumnFamilyStore(cfName);
 
         // KeyCache should start at size 1 if we're caching X% of zero data.
-        int keyCacheSize = store.getKeyCacheCapacity();
-        assert keyCacheSize == 1 : keyCacheSize;
+        assertEquals(1, store.getKeyCacheCapacity());
 
         DecoratedKey key1 = Util.dk("key1");
         DecoratedKey key2 = Util.dk("key2");
@@ -131,12 +131,10 @@ public class KeyCacheTest extends CleanupHelper
 
         // After a flush, the cache should expand to be X% of indices * INDEX_INTERVAL.
         store.forceBlockingFlush();
-        keyCacheSize = store.getKeyCacheCapacity();
-        assert keyCacheSize == expectedCacheSize : keyCacheSize;
+        assertEquals(expectedCacheSize, store.getKeyCacheCapacity());
 
         // After a compaction, the cache should expand to be X% of zero data.
         CompactionManager.instance.submitMajor(store, 0, Integer.MAX_VALUE).get();
-        keyCacheSize = store.getKeyCacheCapacity();
-        assert keyCacheSize == 1 : keyCacheSize;
+        assertEquals(1, store.getKeyCacheCapacity());
     }
 }
