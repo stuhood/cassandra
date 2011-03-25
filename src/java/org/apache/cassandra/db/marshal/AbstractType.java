@@ -20,15 +20,25 @@ package org.apache.cassandra.db.marshal;
  * 
  */
 
-
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+
+import com.ning.compress.lzf.LZFDecoder;
+import com.ning.compress.lzf.LZFEncoder;
 
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.io.sstable.Descriptor;
 import static org.apache.cassandra.io.sstable.IndexHelper.IndexInfo;
+import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Specifies a Comparator for a specific type of ByteBuffer.
@@ -109,6 +119,78 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public ByteBuffer fromString(String source) throws MarshalException
     {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Compresses a group.
+     * This default implementation uses LZF compression.
+     * Both compress and decompress must be overriden if either is.
+     * @param desc A sstable Descriptor for versioning
+     * @param from A collection to compress values from
+     * @param to A ByteBuffer to append to, or null
+     * @return A compressed buffer positioned at its limit, with content starting at 0
+     */
+    public ByteBuffer compress(Descriptor desc, final List<ByteBuffer> from, ByteBuffer to) throws IOException
+    {
+        assert !desc.isFromTheFuture();
+        // copy input buffers into a contiguous buffer, and compress them
+        long length = 0;
+        for (ByteBuffer f : from)
+            length += f.remaining();
+        assert length <= Integer.MAX_VALUE : "Total size of input buffers must be less than 2GB";
+        byte[] uncompressed = new byte[(int)length];
+        for (int fromidx = 0, toidx = 0; fromidx < from.size(); fromidx++)
+        {
+            ByteBuffer cur = from.get(fromidx);
+            ByteBufferUtil.arrayCopy(cur, cur.position(), uncompressed, toidx, cur.remaining());
+            toidx += cur.remaining();
+        }
+        final byte[] compressed = LZFEncoder.encode(uncompressed);
+        // delta encode individual buffer lengths and the compressed total length
+        to = LongType.encode(new LongType.LongCollection(from.size() + 1)
+        {
+            public long get(int i)
+            {
+                return i == from.size() ? compressed.length : from.get(i).remaining();
+            }
+        }, to);
+        // append compressed data
+        to = ByteBufferUtil.ensureRemaining(to, compressed.length, false);
+        to.put(compressed);
+        return to;
+    }
+
+    /**
+     * Decompresses a group.
+     * Both compress and decompress must be overriden if either is.
+     * @param desc A sstable Descriptor for versioning
+     * @param from A buffer to decompress values from: will be consumed
+     * @param to An output collection: buffers will _not_ reused
+     */
+    public void decompress(Descriptor desc, ByteBuffer from, Collection<ByteBuffer> to) throws IOException
+    {
+        assert !desc.isFromTheFuture();
+        // read individual buffer lengths and compressed total length
+        long[] lengths = LongType.decode(from);
+        int lcount = lengths.length - 1;
+        assert lengths[lcount] < Integer.MAX_VALUE :
+            "Invalid buffer lengths: " + Arrays.toString(lengths);
+        // copy into compressed buffer
+        byte[] compressed = new byte[(int)lengths[lcount]];
+        from.get(compressed);
+        byte[] uncompressed = LZFDecoder.decode(compressed);
+        // create a new ByteBuffer for each of the individual lengths
+        to.clear();
+        int offset = 0;
+        for (int i = 0; i < lcount; i++)
+        {
+            long length = lengths[i];
+            if (length < 0 || length > Integer.MAX_VALUE)
+                throw new IOException("Invalid buffer lengths: " + Arrays.toString(lengths));
+            to.add(ByteBuffer.wrap(uncompressed, offset, (int)length));
+            offset += length;
+        }
+        assert offset == uncompressed.length : "Invalid buffer length.";
     }
 
     /* validate that the byte array is a valid sequence for the type we are supposed to be comparing */
