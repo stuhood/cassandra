@@ -124,16 +124,25 @@ public class MappedFileDataInput extends AbstractDataInput implements FileDataIn
         return bytes;
     }
 
+    /** If possible, prefer readBytes. */
     @Override
-    public final void readFully(byte[] buffer) throws IOException
+    public final void readFully(byte[] b) throws IOException
     {
-        throw new UnsupportedOperationException("use readBytes instead");
+        readFully(b, 0, b.length);
     }
 
+    /** If possible, prefer readBytes. */
     @Override
-    public final void readFully(byte[] buffer, int offset, int count) throws IOException
+    public final void readFully(byte[] b, int offset, int count) throws IOException
     {
-        throw new UnsupportedOperationException("use readBytes instead");
+        int remaining = buffer.remaining() - position;
+        if (count > remaining)
+            throw new IOException(String.format("mmap segment underflow; remaining is %d but %d requested",
+                                                remaining, count));
+        ByteBuffer tmp = buffer.duplicate();
+        tmp.position(tmp.position() + position);
+        tmp.get(b, offset, count);
+        position += count;
     }
 
     public int skipBytes(int n) throws IOException

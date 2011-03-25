@@ -547,6 +547,19 @@ public final class CFMetaData
         return superColumnName == null ? comparator : subcolumnComparator;
     }
     
+    /** A list of types for 1) key, 2) name [3) subname]. */
+    public List<AbstractType> getTypes()
+    {
+        // TODO: persist this list
+        List<AbstractType> types = new ArrayList<AbstractType>();
+        // FIXME: key validation is mutable, so we can't actually use it for compression
+        types.add(BytesType.instance);
+        types.add(comparator);
+        if (cfType == ColumnFamilyType.Super)
+            types.add(subcolumnComparator);
+        return types;
+    }
+    
     public boolean equals(Object obj)
     {
         if (obj == this)

@@ -20,15 +20,26 @@ package org.apache.cassandra.db.marshal;
  * 
  */
 
-
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 
+import com.ning.compress.lzf.LZFDecoder;
+import com.ning.compress.lzf.LZFEncoder;
+
 import org.apache.cassandra.config.ConfigurationException;
+import org.apache.cassandra.db.DBConstants;
 import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.io.sstable.Descriptor;
 import static org.apache.cassandra.io.sstable.IndexHelper.IndexInfo;
+import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Specifies a Comparator for a specific type of ByteBuffer.
@@ -109,6 +120,63 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public ByteBuffer fromString(String source) throws MarshalException
     {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Compresses a group.
+     * This default implementation uses LZF compression.
+     * Both compress and decompress must be overriden if either is.
+     * @param desc A sstable Descriptor for versioning
+     * @param from A collection to compress values from
+     * @param to A ByteBuffer to append to, or null
+     * @return A compressed buffer positioned at its limit, with content starting at 0
+     */
+    public ByteBuffer compress(Descriptor desc, final List<ByteBuffer> from, ByteBuffer to) throws IOException
+    {
+        assert !desc.isFromTheFuture();
+        // copy input buffers into a contiguous buffer, and compress them
+        ByteBuffer uncompressed = ByteBuffer.allocate(256);
+        for (int fromidx = 0; fromidx < from.size(); fromidx++)
+        {
+            ByteBuffer cur = from.get(fromidx);
+            uncompressed = ByteBufferUtil.ensureRemaining(uncompressed, DBConstants.intSize_ + cur.remaining(), true);
+            uncompressed.putInt(cur.remaining());
+            uncompressed.put(cur.duplicate());
+        }
+        uncompressed.flip();
+        final byte[] compressed = LZFEncoder.encode(uncompressed.array(), uncompressed.remaining());
+        // append compressed data
+        to = ByteBufferUtil.ensureRemaining(to, DBConstants.intSize_ + compressed.length, false);
+        to.putInt(compressed.length);
+        to.put(compressed);
+        return to;
+    }
+
+    /**
+     * Decompresses a group.
+     * Both compress and decompress must be overriden if either is.
+     * @param desc A sstable Descriptor for versioning
+     * @param from A buffer to decompress values from: will be consumed
+     * @param to An output collection: buffers will _not_ reused
+     */
+    public void decompress(Descriptor desc, ByteBuffer from, Collection<ByteBuffer> to) throws IOException
+    {
+        assert !desc.isFromTheFuture();
+        // copy into compressed buffer
+        int length = from.getInt();
+        byte[] compressed = new byte[length];
+        from.get(compressed);
+        ByteBuffer uncompressed = ByteBuffer.wrap(LZFDecoder.decode(compressed));
+        // create a new ByteBuffer for each of the individual lengths
+        to.clear();
+        while (uncompressed.remaining() > 0)
+        {
+            int curlen = uncompressed.getInt();
+            ByteBuffer cur = uncompressed.duplicate();
+            cur.limit(cur.position() + curlen);
+            to.add(cur);
+            uncompressed.position(uncompressed.position() + curlen);
+        }
     }
 
     /* validate that the byte array is a valid sequence for the type we are supposed to be comparing */
