@@ -106,6 +106,26 @@ public class ByteBufferUtil
     }
 
     /**
+     * @param buffer A buffer to ensure for, or null
+     * @param len The minimum remaining() length of the output
+     * @param requireArray True if the output buffer must have an accessible array
+     * @return A buffer with at least 'len' remaining, with the same content and position as the input
+     */
+    public static ByteBuffer ensureRemaining(ByteBuffer buffer, int len, boolean requireArray)
+    {
+        if (buffer == null)
+            return ByteBuffer.allocate(len << 1);
+        else if ((requireArray && !buffer.hasArray()) || buffer.remaining() < len)
+        {
+            ByteBuffer newbuff = ByteBuffer.allocate((buffer.position() + len) << 1);
+            buffer.limit(buffer.position()).rewind();
+            newbuff.put(buffer);
+            return newbuff;
+        }
+        return buffer;
+    }
+
+    /**
      * Decode a String representation.
      * This method assumes that the encoding charset is UTF_8.
      *
@@ -380,7 +400,7 @@ public class ByteBufferUtil
         return null;
     }
 
-    private static ByteBuffer read(DataInput in, int length) throws IOException
+    public static ByteBuffer read(DataInput in, int length) throws IOException
     {
         ByteBuffer array;
 
