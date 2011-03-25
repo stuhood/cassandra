@@ -380,7 +380,7 @@ public class ByteBufferUtil
         return null;
     }
 
-    private static ByteBuffer read(DataInput in, int length) throws IOException
+    public static ByteBuffer read(DataInput in, int length) throws IOException
     {
         ByteBuffer array;
 

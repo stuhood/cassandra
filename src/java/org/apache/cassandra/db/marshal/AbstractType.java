@@ -20,13 +20,18 @@ package org.apache.cassandra.db.marshal;
  * 
  */
 
-
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 
 import org.apache.cassandra.db.IColumn;
 import static org.apache.cassandra.io.sstable.IndexHelper.IndexInfo;
+import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Specifies a Comparator for a specific type of ByteBuffer.
@@ -105,6 +110,49 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
     public ByteBuffer fromString(String source) throws MarshalException
     {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Compresses a group.
+     * TODO: This default implementation should do LZO for the content.
+     * @param version A MessagingService version
+     * @param from A collection to compress values from
+     * @param to A stream to compress values to
+     */
+    public void compress(int version, final List<ByteBuffer> from, DataOutput to) throws IOException
+    {
+        assert version == MessagingService.version_ : version;
+        // write the buffer lengths via the LongType primitive
+        LongType.encode(new LongType.LongCollection(from.size())
+        {
+            public long get(int i)
+            {
+                return from.get(i).remaining();
+            }
+        }, to);
+        // write the buffers without lengths
+        for (ByteBuffer buff : from)
+            ByteBufferUtil.write(buff, to);
+    }
+
+    /**
+     * Decompresses a group.
+     * @param version A MessagingService version
+     * @param from A stream to decompress values from
+     * @param to An output collection: buffers will _not_ reused
+     */
+    public void decompress(int version, DataInput from, Collection<ByteBuffer> to) throws IOException
+    {
+        assert version == MessagingService.version_ : version;
+        long[] lengths = LongType.decode(from);
+        // read content into output list
+        to.clear();
+        for (long length : lengths)
+        {
+            if (length < 0 || length > Integer.MAX_VALUE)
+                throw new IOException("Invalid buffer length: " + length);
+            to.add(ByteBufferUtil.read(from, (int)length));
+        }
     }
 
     /* validate that the byte array is a valid sequence for the type we are supposed to be comparing */

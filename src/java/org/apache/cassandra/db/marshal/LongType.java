@@ -20,9 +20,14 @@ package org.apache.cassandra.db.marshal;
  * 
  */
 
-
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collection;
+import java.util.List;
 
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class LongType extends AbstractType<Long>
@@ -103,5 +108,109 @@ public class LongType extends AbstractType<Long>
     public Class<Long> getType()
     {
         return Long.class;
+    }
+
+    @Override
+    public void compress(int version, final List<ByteBuffer> from, DataOutput to) throws IOException
+    {
+        assert version == MessagingService.version_ : version;
+        // write via the LongType primitive
+        LongType.encode(new LongType.LongCollection(from.size())
+        {
+            public long get(int i)
+            {
+                return ByteBufferUtil.toLong(from.get(i));
+            }
+        }, to);
+    }
+
+    @Override
+    public void decompress(int version, DataInput from, Collection<ByteBuffer> to) throws IOException
+    {
+        assert version == MessagingService.version_ : version;
+        to.clear();
+        for (long val : LongType.decode(from))
+            to.add(ByteBufferUtil.bytes(val));
+    }
+
+    /** Delta and varint encoding: a primitive for use in other implementations. */
+    public static void encode(LongCollection from, DataOutput to) throws IOException
+    {
+        // allocate a buffer large enough for the worst case size
+        byte[] buff = new byte[(from.size() + 1) * 10];
+        int pos = encodeLong(from.size(), buff, 0);
+        long previous = 0;
+        for (int i = 0; i < from.size(); i++)
+        {
+            long cur = from.get(i);
+            pos = encodeLong(cur - previous, buff, pos);
+            previous = cur;
+        }
+        // flush the interesting portion of the buffer
+        to.write(buff, 0, pos);
+    }
+
+    /** Delta and varint encoding: a primitive for use in other implementations. */
+    public static long[] decode(DataInput from) throws IOException
+    {
+        long count = decodeLong(from);
+        if (count < 0 || count > Integer.MAX_VALUE)
+            throw new IOException("Invalid size for array: " + count);
+        long[] to = new long[(int)count];
+        long previous = 0;
+        for (int i = 0; i < count; i++)
+        {
+            long cur = decodeLong(from);
+            to[i] = cur + previous;
+            previous = to[i];
+        }
+        return to;
+    }
+
+    /** TODO: This is exposed as BinaryData.encodeLong in Avro 1.5 */
+    private static int encodeLong(long n, byte[] b, int pos)
+    {
+        n = (n << 1) ^ (n >> 63); // move sign to low-order bit
+        while ((n & ~0x7F) != 0) {
+            b[pos++] = (byte)((n & 0x7f) | 0x80);
+            n >>>= 7;
+        }
+        b[pos++] = (byte) n;
+        return pos;
+    }
+
+    /** From Avro's decoder implementation: symmetrical to BinaryData.encodeLong. */
+    private static long decodeLong(DataInput in) throws IOException
+    {
+        long n = 0;
+        int b;
+        int shift = 0;
+        do
+        {
+            b = in.readUnsignedByte();
+            n |= (b & 0x7FL) << shift;
+            if ((b & 0x80) == 0)
+                return (n >>> 1) ^ -(n & 1); // back to two's-complement
+            shift += 7;
+        }
+        while (shift < 64);
+        throw new IOException("Invalid long encoding");
+    }
+
+    /** A primitive collection supertype to avoid boxing. */
+    public static abstract class LongCollection
+    {
+        private final int size;
+        public LongCollection(int size)
+        {
+            this.size = size;
+        }
+
+        public abstract long get(int i);
+
+        public int size()
+        {
+            return size;
+        }
     }
 }
