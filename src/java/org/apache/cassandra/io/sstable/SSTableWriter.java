@@ -134,7 +134,24 @@ public class SSTableWriter extends SSTable
         RowHeader header = null;
         if (computeHeader)
         {
-            header = new RowHeader(startPosition);
+            // use the observed data to create a row header
+            List<ByteBuffer> names = rowObserver.names.get(0);
+            if (names.size() < 3)
+                // observer didn't create a complex entry
+                header = new RowHeader(startPosition);
+            else
+            {
+                // row was wide enough for a nested entry
+                ColumnFamily meta = row.getMetadata();
+                // the min and max top level column are guaranteed to be observed
+                ByteBuffer min = names.get(0);
+                ByteBuffer max = names.get(names.size() - 1);
+                header = new NestedRowHeader(startPosition,
+                                             meta.getMarkedForDeleteAt(),
+                                             meta.getLocalDeletionTime(),
+                                             min,
+                                             max);
+            }
         }
         afterAppend(row.key, startPosition);
         return header;
