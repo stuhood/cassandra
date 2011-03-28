@@ -176,7 +176,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
             columnCounts = SSTable.defaultColumnHistogram();
         }
 
-        SSTableReader sstable = new BasicReader(descriptor, components, metadata, partitioner, null, null, null, null, System.currentTimeMillis(), rowSizes, columnCounts);
+        SSTableReader sstable = internalOpenUnsafe(descriptor, components, metadata, partitioner, null, null, null, null, System.currentTimeMillis(), rowSizes, columnCounts);
         sstable.setTrackedBy(tracker);
 
         // versions before 'c' encoded keys as utf-16 before hashing to the filter
@@ -205,7 +205,15 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
                                       EstimatedHistogram columncount) throws IOException
     {
         assert desc != null && partitioner != null && ifile != null && dfile != null && isummary != null && bf != null;
-        return new BasicReader(desc, components, metadata, partitioner, ifile, dfile, isummary, bf, maxDataAge, rowsize, columncount);
+        return internalOpenUnsafe(desc, components, metadata, partitioner, ifile, dfile, isummary, bf, maxDataAge, rowsize, columncount);
+    }
+
+    private static SSTableReader internalOpenUnsafe(Descriptor desc, Set<Component> components, CFMetaData metadata, IPartitioner partitioner, SegmentedFile ifile, SegmentedFile dfile, IndexSummary isummary, Filter bf, long maxDataAge, EstimatedHistogram rowsize,
+                                      EstimatedHistogram columncount) throws IOException
+    {
+        return desc.hasBasicIndex ?
+            new BasicReader(desc, components, metadata, partitioner, ifile, dfile, isummary, bf, maxDataAge, rowsize, columncount) :
+            new NestedReader(desc, components, metadata, partitioner, ifile, dfile, isummary, bf, maxDataAge, rowsize, columncount);
     }
 
     protected SSTableReader(Descriptor desc,
@@ -525,7 +533,9 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
 
     public static KeyIterator getKeyIterator(Descriptor desc)
     {
-        return BasicReader.getKeyIterator(desc);
+        return desc.hasBasicIndex ?
+            BasicReader.getKeyIterator(desc) :
+            NestedReader.getKeyIterator(desc);
     }
 
     public static long readRowSize(DataInput in, Descriptor d) throws IOException

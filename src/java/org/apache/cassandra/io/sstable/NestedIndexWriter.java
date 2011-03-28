@@ -129,6 +129,9 @@ class NestedIndexWriter extends IndexWriter
 
         // encode each value using the appropriate AbstractType
         types.get(0).compress(VERSION, tuples.get(0), indexFile);
+        // only recording metadata per key (FIXME: not within supercolumns)
+        LongType.encode(new LongList(markedForDeleteAt), indexFile);
+        LongType.encode(new LongList(localDeletionTime), indexFile);
         for (int i = 1; i < types.size(); i++)
         {
             LongType.encode(parents.get(i - 1).asLongCollection(), indexFile);
