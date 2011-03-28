@@ -171,7 +171,22 @@ public class ChunkedWriter extends SSTableWriter
         BlockHeader header = null;
         if (computeHeader)
         {
-            header = new BlockHeader(startPosition);
+            // use the observed column names to create a row header
+            List<ByteBuffer> names = iwriter.getLevel(1);
+            if (names.size() < 3)
+                // observer didn't create a complex entry
+                header = new BlockHeader(startPosition);
+            else
+            {
+                // the min and max top level column are guaranteed to be observed
+                ByteBuffer min = names.get(0);
+                ByteBuffer max = names.get(names.size() - 1);
+                header = new NestedBlockHeader(startPosition,
+                                             cf.getMarkedForDeleteAt(),
+                                             cf.getLocalDeletionTime(),
+                                             min,
+                                             max);
+            }
         }
         afterAppend(decoratedKey, startPosition);
         return header;

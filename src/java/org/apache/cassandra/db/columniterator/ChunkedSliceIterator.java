@@ -24,15 +24,22 @@ package org.apache.cassandra.db.columniterator;
 import java.io.IOError;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.Chunk;
 import org.apache.cassandra.io.sstable.Cursor;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
+import org.apache.cassandra.io.util.FileMark;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -48,12 +55,13 @@ public class ChunkedSliceIterator implements IColumnIterator
     private DecoratedKey key;
     private ColumnFamily cf;
 
-    private final FileDataInput file;
-    private boolean shouldClose;
-    protected final boolean isSuper;
+    private Iterator<BlockHeader> headers;
+    private FileDataInput file;
+    private FileMark mark;
+    private long markPosition;
 
     // the current chunks, flag for column consumption
-    private final Cursor cursor;
+    private Cursor cursor;
     private boolean available;
 
     /**
@@ -68,21 +76,46 @@ public class ChunkedSliceIterator implements IColumnIterator
     {
         assert !reversed : "TODO: Support reversed slices";
         this.sstable = sstable;
-        this.isSuper = sstable.metadata.cfType == ColumnFamilyType.Super;
         this.key = key;
         this.startColumn = startColumn;
         this.finishColumn = finishColumn;
         this.available = false;
-        BlockHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
-        if (header == null)
-        {
-            this.cursor = null;
-            this.file = null;
+
+        List<BlockHeader> headers = sstable.getPositions(key, SSTableReader.Operator.EQ);
+        if (headers == null)
             return;
+        if (headers.get(0).isMetadataSet())
+        {
+            // apply metadata from the index
+            cf = ColumnFamily.create(sstable.metadata);
+            cf.delete(headers.get(0).localDeletionTime(), headers.get(0).markedForDeleteAt());
+
+            // filter the blockheaders to only seek to the matching columns
+            List<BlockHeader> filtered = null;
+            AbstractType c = sstable.getColumnComparator();
+            for (BlockHeader header : headers)
+            {
+                if (header.min() == null)
+                    // the row is a tombstone, and we've gotten the metadata: finished.
+                    return;
+                if (finishColumn.remaining() > 0 && c.compare(finishColumn, header.min()) < 0)
+                    // the minimum column in this row is greater than the queries' max
+                    continue;
+                if (startColumn.remaining() > 0 && c.compare(header.max(), startColumn) < 0)
+                    // the maximum column in this row is less than the queries' min
+                    continue;
+                if (filtered == null)
+                    // lazily create the filtered list
+                    filtered = new ArrayList<BlockHeader>();
+                filtered.add(header);
+            }
+            if (filtered == null)
+                // no interesting blocks in this file
+                return;
+            headers = filtered;
         }
-        // we opened this file handle: close it when finished
-        shouldClose = true;
-        this.file = sstable.getFileDataInput(header, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
+        this.headers = headers.iterator();
+
         this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
         this.init();
         this.hasNext(); // eagerly load the chunk/key/cf
@@ -101,14 +134,12 @@ public class ChunkedSliceIterator implements IColumnIterator
     {
         assert !reversed : "TODO: Support reversed slices";
         this.sstable = sstable;
-        this.isSuper = sstable.metadata.cfType == ColumnFamilyType.Super;
         this.key = key;
         this.startColumn = startColumn;
         this.finishColumn = finishColumn;
         this.available = false;
+        this.headers = null;
         this.cursor = cursor;
-        // we did not open this file handle: don't close it
-        this.shouldClose = false; 
         this.file = file;
         this.init();
         this.hasNext(); // eagerly load the chunk/key/cf
@@ -142,11 +173,8 @@ public class ChunkedSliceIterator implements IColumnIterator
     /** @return True if we opened the next valid span for this iterator. */
     private boolean readSpan()
     {
-        if (!cursor.hasMoreSpans())
-            return false;
         try
         {
-            /* FIXME: specific to 2319
             if (headers != null)
             {
                 if (!headers.hasNext())
@@ -164,7 +192,6 @@ public class ChunkedSliceIterator implements IColumnIterator
                 mark = file.mark();
                 markPosition = header.position();
             }
-            */
             // read all chunks for the span
             cursor.nextSpan(file);
         }
@@ -183,7 +210,6 @@ public class ChunkedSliceIterator implements IColumnIterator
     public boolean hasNext()
     {
         if (available)
-            // column available
             return true;
         if (cursor == null)
             return false;
@@ -245,7 +271,9 @@ public class ChunkedSliceIterator implements IColumnIterator
 
     public void close() throws IOException
     {
-        if (shouldClose)
+        if (file == null)
+            return;
+        if (headers != null)
         {
             file.close();
             return;

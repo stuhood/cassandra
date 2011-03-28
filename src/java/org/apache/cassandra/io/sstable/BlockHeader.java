@@ -23,7 +23,9 @@ package org.apache.cassandra.io.sstable;
 import java.nio.ByteBuffer;
 
 /**
- * The representation of a narrow row in memory. This is essentially just a boxed position.
+ * The representation of a narrow row in memory: when possible, wider rows are summarized
+ * using the NestedBlockHeader subclass, which contains row metadata and thresholds. This
+ * base implementation is essentially just a boxed position.
  */
 public class BlockHeader
 {

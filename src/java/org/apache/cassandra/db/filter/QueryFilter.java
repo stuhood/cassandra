@@ -67,31 +67,23 @@ public class QueryFilter
     public IColumnIterator getMemtableColumnIterator(ColumnFamily cf, DecoratedKey key, AbstractType comparator)
     {
         assert cf != null;
-        if (path.superColumnName == null)
-            return filter.getMemtableColumnIterator(cf, key, comparator);
-        return superFilter.getMemtableColumnIterator(cf, key, comparator);
+        return topLevelFilter().getMemtableColumnIterator(cf, key, comparator);
     }
 
-    // TODO move gcBefore into a field
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable)
     {
-        if (path.superColumnName == null)
-            return filter.getSSTableColumnIterator(sstable, key);
-        return superFilter.getSSTableColumnIterator(sstable, key);
+        return topLevelFilter().getSSTableColumnIterator(sstable, key);
     }
 
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, Cursor cursor)
     {
-        if (path.superColumnName == null)
-            return filter.getSSTableColumnIterator(sstable, file, cursor);
-        return superFilter.getSSTableColumnIterator(sstable, file, cursor);
+        return topLevelFilter().getSSTableColumnIterator(sstable, file, cursor);
     }
 
     // TODO move gcBefore into a field
     public void collateColumns(final ColumnFamily returnCF, List<? extends CloseableIterator<IColumn>> toCollate, AbstractType comparator, final int gcBefore)
     {
-        IFilter topLevelFilter = (superFilter == null ? filter : superFilter);
-        Comparator<IColumn> fcomp = topLevelFilter.getColumnComparator(comparator);
+        Comparator<IColumn> fcomp = topLevelFilter().getColumnComparator(comparator);
         // define a 'reduced' iterator that merges columns w/ the same name, which
         // greatly simplifies computing liveColumns in the presence of tombstones.
         Iterator<IColumn> reduced = MergeIterator.get(toCollate, fcomp, new MergeIterator.Reducer<IColumn, IColumn>()
@@ -141,7 +133,12 @@ public class QueryFilter
             }
         });
 
-        topLevelFilter.collectReducedColumns(returnCF, reduced, gcBefore);
+        topLevelFilter().collectReducedColumns(returnCF, reduced, gcBefore);
+    }
+
+    private final IFilter topLevelFilter()
+    {
+        return superFilter == null ? filter : superFilter;
     }
 
     public String getColumnFamilyName()

@@ -127,7 +127,7 @@ public abstract class SSTableReader extends SSTable
                                         ? SSTableMetadata.serializer.deserialize(descriptor)
                                         : SSTableMetadata.createDefaultInstance();
 
-        SSTableReader sstable = new BasicReader(descriptor,
+        SSTableReader sstable = internalOpenUnsafe(descriptor,
                                                   components,
                                                   metadata,
                                                   partitioner,
@@ -163,7 +163,7 @@ public abstract class SSTableReader extends SSTable
                                       SSTableMetadata sstableMetadata) throws IOException
     {
         assert desc != null && partitioner != null && ifile != null && dfile != null && isummary != null && bf != null && sstableMetadata != null;
-        return new BasicReader(desc,
+        return internalOpenUnsafe(desc,
                                  components,
                                  metadata,
                                  partitioner,
@@ -172,6 +172,40 @@ public abstract class SSTableReader extends SSTable
                                  bf,
                                  maxDataAge,
                                  sstableMetadata);
+    }
+
+    private static SSTableReader internalOpenUnsafe(Descriptor desc,
+                                                    Set<Component> components,
+                                                    CFMetaData metadata,
+                                                    IPartitioner partitioner,
+                                                    SegmentedFile ifile,
+                                                    SegmentedFile dfile,
+                                                    IndexSummary isummary,
+                                                    Filter bf,
+                                                    long maxDataAge,
+                                                    SSTableMetadata sstableMetadata) throws IOException
+    {
+        return desc.version.isRowIndexed ?
+            new BasicReader(desc,
+                            components,
+                            metadata,
+                            partitioner,
+                            ifile,
+                            dfile,
+                            isummary,
+                            bf,
+                            maxDataAge,
+                            sstableMetadata):
+            new NestedReader(desc,
+                             components,
+                             metadata,
+                             partitioner,
+                             ifile,
+                             dfile,
+                             isummary,
+                             bf,
+                             maxDataAge,
+                             sstableMetadata);
     }
 
     protected SSTableReader(Descriptor desc,
@@ -422,9 +456,22 @@ public abstract class SSTableReader extends SSTable
     /**
      * @param decoratedKey The key to apply as the rhs to the given Operator.
      * @param op The Operator defining matching keys: the nearest key to the target matching the operator wins.
-     * @return The position in the data file to find the key, or -1 if the key is not present
+     * @return The first block of the matched row in the data file, or null if the key was not present
      */
     public BlockHeader getPosition(DecoratedKey decoratedKey, Operator op)
+    {
+        List<BlockHeader> headers = getPositions(decoratedKey, op);
+        if (headers == null)
+            return null;
+        return headers.get(0);
+    }
+
+    /**
+     * @param decoratedKey The key to apply as the rhs to the given Operator.
+     * @param op The Operator defining matching keys: the nearest key to the target matching the operator wins.
+     * @return The blocks of the matched row in the data file, or null if the key was not present
+     */
+    public List<BlockHeader> getPositions(DecoratedKey decoratedKey, Operator op)
     {
         // first, check bloom filter
         if (op == Operator.EQ)
@@ -439,27 +486,31 @@ public abstract class SSTableReader extends SSTable
         {
             BlockHeader cachedHeader = getCachedPosition(decoratedKey);
             if (cachedHeader != null)
-                return cachedHeader;
+                // FIXME: only caching narrow rows
+                return Collections.singletonList(cachedHeader);
         }
 
         // see if the sampled index says it's impossible for the key to be present
         IndexSummary.KeyPosition sampledPosition = getIndexScanPosition(decoratedKey);
-        if (sampledPosition == null)
+        long position;
+        if (sampledPosition != null)
+            position = sampledPosition.indexPosition;
+        else
         {
             if (op == Operator.EQ)
                 bloomFilterTracker.addFalsePositive();
             // we matched the -1th position: if the operator might match forward, return the 0th position
-            return op.apply(1) >= 0 ? new BlockHeader(0) : null;
+            position = 0;
         }
 
-        return getPositionFromIndex(sampledPosition, decoratedKey, op);
+        return getPositionsFromIndex(position, decoratedKey, op);
     }
 
     /**
-     * @return By reading from the index file, the position of the given key in the data file, or -1.
+     * @return By reading from the index file, the block headers for the key in the data file, or null.
      * If the given key is matched exactly it should be cached.
      */
-    protected abstract BlockHeader getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op);
+    protected abstract List<BlockHeader> getPositionsFromIndex(long sampledPosition, DecoratedKey decoratedKey, Operator op);
 
     /**
      * @return The length in bytes of the data file for this SSTable.
@@ -549,8 +600,6 @@ public abstract class SSTableReader extends SSTable
 
     public FileDataInput getFileDataInput(BlockHeader header, int bufferSize)
     {
-        if (header == null)
-            return null;
         return dfile.getSegment(header.position(), bufferSize);
     }
 
@@ -584,7 +633,9 @@ public abstract class SSTableReader extends SSTable
 
     public static KeyIterator getKeyIterator(Descriptor desc)
     {
-        return BasicReader.getKeyIterator(desc);
+        return desc.version.isRowIndexed ?
+            BasicReader.getKeyIterator(desc):
+            NestedReader.getKeyIterator(desc);
     }
 
     public static long readRowSize(DataInput in, Descriptor d) throws IOException

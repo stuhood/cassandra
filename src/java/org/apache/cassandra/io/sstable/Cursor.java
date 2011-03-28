@@ -269,7 +269,18 @@ public final class Cursor
      */
     public BlockHeader summarizeSpan(long position)
     {
-        return new BlockHeader(position);
+        List<ByteBuffer> values = chunks[1].values();
+        // TODO: arbitrary
+        if (values.size() < 32)
+            return new BlockHeader(position);
+        RangeEntry meta = getMetadata(1);
+        ByteBuffer min = values.get(0);
+        ByteBuffer max = values.get(values.size() - 1);
+        return new NestedBlockHeader(position,
+                                   meta.markedForDeleteAt,
+                                   meta.localDeletionTime,
+                                   min,
+                                   max);
     }
 
     /**
