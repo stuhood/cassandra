@@ -305,8 +305,8 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
     public Collection<DecoratedKey> getKeySamples()
     {
         return Collections2.transform(indexSummary.getIndexPositions(),
-                                      new Function<IndexSummary.KeyPosition, DecoratedKey>(){
-                                          public DecoratedKey apply(IndexSummary.KeyPosition kp)
+                                      new Function<Position, DecoratedKey>(){
+                                          public DecoratedKey apply(Position kp)
                                           {
                                               return kp.key;
                                           }
@@ -359,10 +359,10 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
     }
 
     /** get the position in the index file to start scanning to find the given key (at most indexInterval keys away) */
-    private IndexSummary.KeyPosition getIndexScanPosition(DecoratedKey decoratedKey)
+    private Position getIndexScanPosition(DecoratedKey decoratedKey)
     {
         assert indexSummary.getIndexPositions() != null && indexSummary.getIndexPositions().size() > 0;
-        int index = Collections.binarySearch(indexSummary.getIndexPositions(), new IndexSummary.KeyPosition(decoratedKey, -1));
+        int index = Collections.binarySearch(indexSummary.getIndexPositions(), new Position(decoratedKey, -1));
         if (index < 0)
         {
             // binary search gives us the first index _greater_ than the key searched for,
@@ -400,7 +400,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
             return cachedPosition;
 
         // see if the sampled index says it's impossible for the key to be present
-        IndexSummary.KeyPosition sampledPosition = getIndexScanPosition(decoratedKey);
+        Position sampledPosition = getIndexScanPosition(decoratedKey);
         if (sampledPosition == null)
         {
             if (op == Operator.EQ)
@@ -416,7 +416,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
      * @return By reading from the index file, the position of the given key in the data file, or -1.
      * If the given key is matched exactly it should be cached.
      */
-    protected abstract long getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op);
+    protected abstract long getPositionFromIndex(Position sampledPosition, DecoratedKey decoratedKey, Operator op);
 
     /**
      * @return The length in bytes of the data file for this SSTable.

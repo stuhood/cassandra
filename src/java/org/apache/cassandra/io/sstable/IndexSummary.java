@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.Pair;
  */
 public class IndexSummary
 {
-    private ArrayList<KeyPosition> indexPositions;
+    private ArrayList<Position> indexPositions;
     private long keysWritten = 0;
 
     public IndexSummary(long expectedKeys)
@@ -48,7 +48,7 @@ public class IndexSummary
         if (expectedEntries > Integer.MAX_VALUE)
             // TODO: that's a _lot_ of keys, or a very low interval
             throw new RuntimeException("Cannot use index_interval of " + DatabaseDescriptor.getIndexInterval() + " with " + expectedKeys + " (expected) keys.");
-        indexPositions = new ArrayList<KeyPosition>((int)expectedEntries);
+        indexPositions = new ArrayList<Position>((int)expectedEntries);
     }
 
     public void incrementRowid()
@@ -63,7 +63,7 @@ public class IndexSummary
 
     public void addEntry(DecoratedKey decoratedKey, long indexPosition)
     {
-        indexPositions.add(new KeyPosition(decoratedKey, indexPosition));
+        indexPositions.add(new Position(decoratedKey, indexPosition));
     }
 
     public void maybeAddEntry(DecoratedKey decoratedKey, long indexPosition)
@@ -73,7 +73,7 @@ public class IndexSummary
         incrementRowid();
     }
 
-    public List<KeyPosition> getIndexPositions()
+    public List<Position> getIndexPositions()
     {
         return indexPositions;
     }
@@ -84,60 +84,15 @@ public class IndexSummary
     }
 
     /**
-     * @return The offset in indexPositions of the first key less than or equal to dk, or -1.
-     */
-    private int binarySearch(DecoratedKey dk)
-    {
-        int index = Collections.binarySearch(indexPositions, new KeyPosition(dk, -1));
-        if (index >= 0)
-            // exact match
-            return index;
-        // binary search gives us the first index _greater_ than the key searched for,
-        // i.e., its insertion position
-        int greaterThan = (index + 1) * -1;
-        if (greaterThan == 0)
-            return -1;
-        return greaterThan - 1;
-    }
-
-    /**
      * @return The position in the index file to start scanning to find the given key
      * (at most indexInterval keys away)
      */
-    KeyPosition getIndexScanPosition(DecoratedKey decoratedKey)
+    Position getIndexScanPosition(DecoratedKey decoratedKey)
     {
-        int index = binarySearch(decoratedKey);
+        int index = Position.binarySearch(indexPositions, decoratedKey);
         if (index == -1)
             // given key is before the beginning of the file
             return null;
         return indexPositions.get(index);
-    }
-
-    /**
-     * This is a simple container for the index Key and its corresponding position
-     * in the index file. Binary search is performed on a list of these objects
-     * to find where to start looking for the index entry containing the data position
-     * (which will be turned into a PositionSize object)
-     */
-    public static final class KeyPosition implements Comparable<KeyPosition>
-    {
-        public final DecoratedKey key;
-        public final long indexPosition;
-
-        public KeyPosition(DecoratedKey key, long indexPosition)
-        {
-            this.key = key;
-            this.indexPosition = indexPosition;
-        }
-
-        public int compareTo(KeyPosition kp)
-        {
-            return key.compareTo(kp.key);
-        }
-
-        public String toString()
-        {
-            return key + ":" + indexPosition;
-        }
     }
 }

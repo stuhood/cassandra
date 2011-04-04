@@ -158,10 +158,10 @@ public class BasicReader extends SSTableReader
     }
 
     @Override
-    protected long getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op)
+    protected long getPositionFromIndex(Position sampledPosition, DecoratedKey decoratedKey, Operator op)
     {
         // scan the on-disk index, starting at the nearest sampled position
-        Iterator<FileDataInput> segments = ifile.iterator(sampledPosition.indexPosition, INDEX_FILE_BUFFER_BYTES);
+        Iterator<FileDataInput> segments = ifile.iterator(sampledPosition.position, INDEX_FILE_BUFFER_BYTES);
         while (segments.hasNext())
         {
             FileDataInput input = segments.next();
