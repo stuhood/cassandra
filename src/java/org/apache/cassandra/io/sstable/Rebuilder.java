@@ -206,12 +206,11 @@ public class Rebuilder implements ICompactionInfo
             long rowPosition = 0;
             long nextRowPosition = 0;
             Observer rowObserver = iwriter.observer();
-            ColumnFamily emptyCf = ColumnFamily.create(metadata);
+            ColumnFamily metaCf = ColumnFamily.create(metadata);
             while (rowPosition < dfile.length())
             {
                 // read key
                 key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(dfile));
-                rowObserver.add(key, rowPosition);
 
                 // determine where the row ends
                 long dataSize = SSTableReader.readRowSize(dfile, desc);
@@ -219,9 +218,10 @@ public class Rebuilder implements ICompactionInfo
 
                 IndexHelper.skipBloomFilter(dfile);
                 IndexHelper.skipIndex(dfile);
-                ColumnFamily.serializer().deserializeFromSSTableNoColumns(emptyCf, dfile);
+                ColumnFamily.serializer().deserializeFromSSTableNoColumns(metaCf, dfile);
                 // observe the column data of the row
-                ColumnFamily.serializer().observeColumnsInSSTable(key, emptyCf, dfile, rowObserver);
+                rowObserver.add(key, metaCf, rowPosition);
+                ColumnFamily.serializer().observeColumnsInSSTable(key, metaCf, dfile, rowObserver);
 
                 // append row info to the index and move to the next row
                 iwriter.append(rowObserver, dataSize);
@@ -284,11 +284,11 @@ public class Rebuilder implements ICompactionInfo
                     row = new PrecompactedRow(controller, Collections.singletonList(iter));
                 }
 
-                // update index writer
                 // write key and row
-                rowObserver.add(key, writerDfile.getFilePointer());
+                rowObserver.add(key, row.getMetadata(), writerDfile.getFilePointer());
                 ByteBufferUtil.writeWithShortLength(key.key, writerDfile);
                 row.write(writerDfile, rowObserver);
+                // update index writer
                 iwriter.append(rowObserver, dataSize);
 
                 rows++;

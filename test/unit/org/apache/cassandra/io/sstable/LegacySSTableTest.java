@@ -103,7 +103,8 @@ public class LegacySSTableTest extends CleanupHelper
                 ByteBuffer key = ByteBufferUtil.bytes(keystring);
                 // confirm that the bloom filter does not reject any keys/names
                 DecoratedKey dk = reader.partitioner.decorateKey(key);
-                SSTableNamesIterator iter = new SSTableNamesIterator(reader, dk, FBUtilities.singleton(key));
+                RowHeader header = reader.getPosition(dk, SSTableReader.Operator.EQ);
+                SSTableNamesIterator iter = new SSTableNamesIterator(reader, header, dk, FBUtilities.singleton(key));
                 assert iter.next().name().equals(key);
             }
         }

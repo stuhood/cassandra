@@ -37,6 +37,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableReader;
+import org.apache.cassandra.io.sstable.RowHeader;
 import org.apache.cassandra.utils.Pair;
 
 public class DataTracker
@@ -228,7 +229,7 @@ public class DataTracker
         }
     }
 
-    public AutoSavingCache<Pair<Descriptor,DecoratedKey>,Long> getKeyCache()
+    public AutoSavingCache<Pair<Descriptor,DecoratedKey>,RowHeader> getKeyCache()
     {
         return cfstore.getKeyCache();
     }

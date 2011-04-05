@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.utils.obs.OpenBitSet;
 
@@ -41,13 +42,19 @@ public abstract class Observer
     protected long count;
     protected final long countThreshold;
 
+    // list of observed keys
     public final List<DecoratedKey> keys;
+    // one pair of timestamps per key
+    // TODO: avoid boxing
+    public final List<Long> markedForDeleteAt;
+    public final List<Long> localDeletionTime;
+    // list of observed column names per level
     public final List<List<ByteBuffer>> names;
     // a bitset per level that toggles when the parent changes
     public final List<IndexedBitSet> parents;
     // a boolean to record the parent flag between resets: a successful reset stores
     // the final parent flag at each level: an unsuccessful reset does not
-    // TODO: this is to assist blocking, despite the fact single rows are observed
+    // TODO: this is to assist blocking, since we observe/reset at the row level
     public final boolean[] leading;
     // the absolute offsets of the observed entries
     // TODO: avoid boxing
@@ -60,6 +67,8 @@ public abstract class Observer
         this.count = 0;
         this.countThreshold = countThreshold;
         this.keys = new ArrayList<DecoratedKey>(expectedEntries);
+        this.markedForDeleteAt = new ArrayList<Long>(expectedEntries);
+        this.localDeletionTime = new ArrayList<Long>(expectedEntries);
         this.names = new ArrayList<List<ByteBuffer>>(depth - 1);
         this.parents = new ArrayList<IndexedBitSet>(depth - 1);
         for (int i = 1; i < depth; i++)
@@ -91,11 +100,16 @@ public abstract class Observer
         size += bytes;
     }
 
-    /** Adds a key that shouldAdd requested. */
-    public void add(DecoratedKey key, long position)
+    /**
+     * Adds a row that shouldAdd requested.
+     * @param meta An empty column family containing metadata for the row.
+     */
+    public void add(DecoratedKey key, ColumnFamily meta, long position)
     {
         assert keys.isEmpty() : "TODO: Observer can only observe a row at a time";
         keys.add(key);
+        markedForDeleteAt.add(meta.getMarkedForDeleteAt());
+        localDeletionTime.add((long)meta.getLocalDeletionTime());
         offsets.add(position);
         // toggle the parents of our children, creating implicit "empty" children
         toggleFrom(1);
@@ -143,6 +157,8 @@ public abstract class Observer
         count = 0;
         size = 0;
         keys.clear();
+        markedForDeleteAt.clear();
+        localDeletionTime.clear();
         for (int i = 0; i < names.size(); i++)
         {
             names.get(i).clear();

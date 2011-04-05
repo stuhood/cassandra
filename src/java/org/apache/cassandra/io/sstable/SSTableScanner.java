@@ -90,13 +90,13 @@ public class SSTableScanner implements Iterator<IColumnIterator>, Closeable
     {
         try
         {
-            long position = sstable.getPosition(seekKey, SSTableReader.Operator.GE);
-            if (position < 0)
+            RowHeader header = sstable.getPosition(seekKey, SSTableReader.Operator.GE);
+            if (header == null)
             {
                 exhausted = true;
                 return;
             }
-            file.seek(position);
+            file.seek(header.position());
             row = null;
         }
         catch (IOException e)

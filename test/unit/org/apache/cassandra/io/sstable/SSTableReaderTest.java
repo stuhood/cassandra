@@ -116,7 +116,8 @@ public class SSTableReaderTest extends CleanupHelper
         for (int j = 0; j < 100; j += 2)
         {
             DecoratedKey dk = Util.dk(String.valueOf(j));
-            FileDataInput file = sstable.getFileDataInput(dk, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
+            RowHeader header = sstable.getPosition(dk, SSTableReader.Operator.EQ);
+            FileDataInput file = sstable.getFileDataInput(header, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
             DecoratedKey keyInDisk = SSTableReader.decodeKey(sstable.partitioner,
                                                              sstable.descriptor,
                                                              ByteBufferUtil.readWithShortLength(file));
@@ -127,7 +128,7 @@ public class SSTableReaderTest extends CleanupHelper
         for (int j = 1; j < 110; j += 2)
         {
             DecoratedKey dk = Util.dk(String.valueOf(j));
-            assert sstable.getPosition(dk, SSTableReader.Operator.EQ) == -1;
+            assert sstable.getPosition(dk, SSTableReader.Operator.EQ) == null;
         }
     }
 

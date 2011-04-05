@@ -94,6 +94,11 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         iter = null;
     }
 
+    public ColumnFamily getMetadata()
+    {
+        return emptyColumnFamily;
+    }
+
     public void write(RandomAccessFile out, Observer observer) throws IOException
     {
         if (rows.size() == 1 && !shouldPurge && !controller.needDeserialize())

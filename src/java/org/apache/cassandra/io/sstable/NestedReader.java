@@ -24,13 +24,12 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.base.Function;
-import com.google.common.collect.Collections2;
+import com.google.common.collect.Lists;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
@@ -51,6 +50,7 @@ public class NestedReader extends SSTableReader
 
     // for each level, a type to be used for compression
     private final List<AbstractType> types;
+    private final Decorator decorator;
 
     NestedReader(Descriptor desc,
                  Set<Component> components,
@@ -67,6 +67,7 @@ public class NestedReader extends SSTableReader
     {
         super(desc, components, metadata, partitioner, ifile, dfile, indexSummary, bloomFilter, maxDataAge, rowSizes, columnCounts);
         this.types = metadata.getTypes();
+        this.decorator = new Decorator();
     }
 
     static long estimateRowsFromIndex(RandomAccessFile ifile) throws IOException
@@ -76,7 +77,7 @@ public class NestedReader extends SSTableReader
     }
 
     /**
-     * Reads index blocks and performs deduping of keys (since they might be stored in multiple blocks).
+     * Reads index blocks to return keys sequentially.
      * TODO: Using the system default partitioner: will not iterate secindexes
      */
     public static KeyIterator getKeyIterator(Descriptor desc)
@@ -85,23 +86,23 @@ public class NestedReader extends SSTableReader
         final List<AbstractType> types = cfm.getTypes();
         return new KeyIterator(desc)
         {
-            final ArrayDeque<Position> positions = new ArrayDeque<Position>();
+            final ArrayDeque<ByteBuffer> keys = new ArrayDeque<ByteBuffer>();
             protected DecoratedKey computeNext()
             {
-                if (positions.isEmpty())
+                if (keys.isEmpty())
                 {
                     try
                     {
                         if (in.isEOF())
                             return endOfData();
-                        readBlockKeys(StorageService.getPartitioner(), types, in, positions);
+                        readBlock(types, in, keys, null);
                     }
                     catch (IOException e)
                     {
                         throw new IOError(e);
                     }
                 }
-                return positions.removeFirst().key;
+                return StorageService.getPartitioner().decorateKey(keys.removeFirst());
             }
         };
     }
@@ -129,7 +130,8 @@ public class NestedReader extends SSTableReader
             if (recreatebloom)
                 // estimate key count based on index length
                 bf = LegacyBloomFilter.getFilter(estimatedKeys, 15);
-            List<Position> positions = new ArrayList<Position>();
+            List<ByteBuffer> keys = new ArrayList<ByteBuffer>();
+            List<RowHeader> headers = new ArrayList<RowHeader>();
             // read from the index a block at a time
             while (true)
             {
@@ -137,20 +139,23 @@ public class NestedReader extends SSTableReader
                 if (indexPosition == indexSize)
                     break;
 
-                readBlockKeys(partitioner, types, input, positions);
-
+                readBlock(types, input, keys, headers);
                 // add the first position in the block to the summary
-                // (TODO: these blocks respect the index interval at write time)
-                indexSummary.addEntry(positions.get(0).key, indexPosition);
+                // (TODO: would need to shimmy a bit to respect the index interval at read time:
+                // getPositionFromIndex assumes only one block needs to be scanned)
+                indexSummary.addEntry(partitioner.decorateKey(keys.get(0)), indexPosition);
                 ibuilder.addPotentialBoundary(indexPosition);
 
-                for (Position pos : positions)
+                for (int i = 0; i < keys.size(); i++)
                 {
+                    dbuilder.addPotentialBoundary(headers.get(i).position());
                     if (recreatebloom)
-                        bf.add(pos.key.key);
-                    if (cacheLoading && keysToLoadInCache.contains(pos.key))
-                        cacheKey(pos.key, pos.position);
-                    dbuilder.addPotentialBoundary(pos.position);
+                        bf.add(keys.get(i));
+                    if (!cacheLoading)
+                        continue;
+                    DecoratedKey key = partitioner.decorateKey(keys.get(i));
+                    if (keysToLoadInCache.contains(key))
+                        cacheKey(key, headers.get(i));
                 }
             }
         }
@@ -166,44 +171,54 @@ public class NestedReader extends SSTableReader
     }
 
     @Override
-    protected long getPositionFromIndex(Position sampledPosition, DecoratedKey decoratedKey, Operator op)
+    protected RowHeader getPositionFromIndex(Position sampledPosition, DecoratedKey decoratedKey, Operator op)
     {
         // read the sampled block from the on-disk index
         Iterator<FileDataInput> segments = ifile.iterator(sampledPosition.position, INDEX_FILE_BUFFER_BYTES);
-        List<Position> positions = new ArrayList<Position>();
+        List<ByteBuffer> keybuff = new ArrayList<ByteBuffer>();
+        List<RowHeader> headers = new ArrayList<RowHeader>();
         FileDataInput input = segments.next();
         try
         {
-            // read one block: the summary guarantees that the key exists in this
-            // block, or not at all
-            readBlockKeys(partitioner, types, input, positions);
+            // read a block: the key exists in this block, or not at all
+            readBlock(types, input, keybuff, headers);
+            // lazily decorate keys and search for the first gte
+            List<DecoratedKey> keys = Lists.transform(keybuff, decorator);
+            int b = Collections.binarySearch(keys, decoratedKey, DecoratedKey.comparator);
+            int comparison;
+            if (b >= 0)
+                // exact match
+                comparison = 0;
+            else
+            {
+                // round up to first entry gt the match
+                b = -(b + 1);
+                if (b >= keys.size())
+                    // there is nothing gte the key
+                    return miss(op);
+                comparison = 1;
+            }
 
-            int b = Position.binarySearch(positions, decoratedKey);
-            if (b < 0)
-                // nothing lte in this block
-                throw new IOException("IndexSummary sent us to the wrong block: " + sampledPosition + " for " + decoratedKey);
-
-            // compare to the matched entry
-            Position matched = positions.get(b);
-            int comparison = matched.key.compareTo(decoratedKey);
+            // compare to match
             int v = op.apply(comparison);
             if (v == 0)
             {
+                // hit!
                 if (comparison == 0 && keyCache != null && keyCache.getCapacity() > 0)
                 {
                     if (op == Operator.EQ)
                         bloomFilterTracker.addTruePositive();
                     // store exact match for the key
-                    cacheKey(matched.key, matched.position);
+                    cacheKey(keys.get(b), headers.get(b));
                 }
-                return matched.position;
+                return headers.get(b);
             }
-            if (v < 0)
+            else if (v > 0 && b + 1 < keys.size())
             {
-                if (op == Operator.EQ)
-                    bloomFilterTracker.addFalsePositive();
-                return -1;
+                // entry would like to match forward: and there is an entry after the match
+                return headers.get(b + 1);
             }
+            // else miss
         }
         catch (IOException e)
         {
@@ -213,47 +228,105 @@ public class NestedReader extends SSTableReader
         {
             FileUtils.closeQuietly(input);
         }
+        return miss(op);
+    }
 
+    private RowHeader miss(Operator op)
+    {
         if (op == Operator.EQ)
             bloomFilterTracker.addFalsePositive();
-        return -1;
+        return null;
     }
 
     /**
-     * Read a block of keys from the index, ignoring the rest of the content.
+     * Read a block of keys and row headers from the index.
      * This method is the inverse of NestedIndexWriter.flush
+     * @param keysout An output collection of row keys.
+     * @param headout An output collection of headers corresponding to the keys, or null.
      */
-    private static void readBlockKeys(IPartitioner partitioner, List<AbstractType> types, DataInput from, Collection<Position> to) throws IOException
+    private static void readBlock(List<AbstractType> types, DataInput from, Collection<ByteBuffer> keysout, Collection<RowHeader> headout) throws IOException
     {
-        // decode keys
-        ArrayList<ByteBuffer> keys = new ArrayList<ByteBuffer>();
-        types.get(0).decompress(VERSION, from, keys);
+        // keys and metadata
+        keysout.clear();
+        types.get(0).decompress(VERSION, from, keysout);
+        long[] markedForDeleteAt = LongType.decode(from);
+        long[] localDeletionTime = LongType.decode(from);
+        assert keysout.size() == markedForDeleteAt.length : keysout.size() + " vs " + markedForDeleteAt.length;
 
-        // record the parent flags of the first name level
-        Observer.IndexedBitSet parent = Observer.IndexedBitSet.from(LongType.decode(from));
-        // skip the names and remaining levels
-        // TODO: needs primitive skip on type specific compression
-        types.get(1).decompress(VERSION, from, new ArrayList<ByteBuffer>());
+        // first name level
+        ArrayList<ByteBuffer> names = new ArrayList<ByteBuffer>();
+        Observer.IndexedBitSet parents = Observer.IndexedBitSet.from(LongType.decode(from));
+        types.get(1).decompress(VERSION, from, names);
+        // skip the remaining levels (TODO: since we don't currently allow random
+        // access to blocks, they are not useful yet)
         for (int i = 2; i < types.size(); i++)
         {
+            // TODO: need primitive skip on type specific compression
             LongType.decode(from);
             types.get(i).decompress(VERSION, from, new ArrayList<ByteBuffer>());
         }
+        assert names.size() == (parents.index - keysout.size()) :
+            names.size() + " vs (" + parents.index + " - " + keysout.size() + ")";
 
-        // decode the offsets using the LongType primitive
+        // decode the metadata and offsets using the LongType primitive
         long[] offsets = LongType.decode(from);
         
-        // reconstruct positions using the keys, parent flags and offsets
-        to.clear();
-        Iterator<ByteBuffer> iter = keys.iterator();
-        // decode the first key and parent flag
-        to.add(new Position(partitioner.decorateKey(iter.next()), offsets[0]));
-        for (int i = 1; i < parent.index; i++)
+        // finished reading from disk: should we reconstruct the headers?
+        if (headout == null)
+            return;
+        headout.clear();
+
+        /**
+         * reconstruct positions using the keys, parent flags and offsets:
+         * runs of equal parent bits are entries for a particular parent.
+         * example: 1 consecutive parent bit represents a narrow row, where
+         * we didn't bother to record children. 2 consecutive bits represents
+         * a parent with exactly one child (which is both the min and max) and
+         * 3 bits or more represent 2 or more children. A simple RowHeader will
+         * be created for 1 or 2 bits: a NestedRowHeader will be created for 3
+         * or more.
+         */
+        int keyidx = 0, nameidx = 0;
+        int start = 0;
+        assert parents.index < Integer.MAX_VALUE;
+        while (start < parents.index)
         {
-            if (parent.get(i - 1) == parent.get(i))
-                continue;
-            // the parent of the column changed, record a new position
-            to.add(new Position(partitioner.decorateKey(iter.next()), offsets[i]));
+            int end = (int)parents.endOfRun(start);
+            int runLength = end - start;
+            switch (runLength)
+            {
+                case 1:
+                    // tombstone or narrow row: one offset, zero names
+                    headout.add(new RowHeader(offsets[start]));
+                    break;
+                case 2:
+                    // row of exactly one column: two offsets, one name
+                    // (unusual: we would normally just encode as narrow)
+                    headout.add(new RowHeader(offsets[start]));
+                    nameidx++;
+                    break;
+                default:
+                    // wide row
+                    // the first column for the run is the minimum: the last is the max
+                    ByteBuffer min = names.get(nameidx);
+                    headout.add(new NestedRowHeader(offsets[start],
+                                                    markedForDeleteAt[keyidx],
+                                                    (int)localDeletionTime[keyidx],
+                                                    min,
+                                                    names.get(nameidx + runLength - 2)));
+                    nameidx += runLength - 1;
+            }
+            // reset for next run
+            start = end;
+            keyidx++;
+        }
+    }
+
+    private final class Decorator implements Function<ByteBuffer,DecoratedKey>
+    {
+        public DecoratedKey apply(ByteBuffer in)
+        {
+            return partitioner.decorateKey(in);
         }
     }
 }

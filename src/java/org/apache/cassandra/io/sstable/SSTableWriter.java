@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
@@ -95,7 +96,7 @@ public class SSTableWriter extends SSTable
         }
     }
 
-    private long beforeAppend(DecoratedKey decoratedKey) throws IOException
+    private long beforeAppend(DecoratedKey decoratedKey, ColumnFamily meta) throws IOException
     {
         if (decoratedKey == null)
         {
@@ -110,7 +111,7 @@ public class SSTableWriter extends SSTable
         }
         long position = (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
         if (rowObserver.shouldAdd(0, false))
-            rowObserver.add(decoratedKey, position);
+            rowObserver.add(decoratedKey, meta, position);
         return position;
     }
 
@@ -124,18 +125,48 @@ public class SSTableWriter extends SSTable
         lastWrittenKey = key;
     }
 
-    public long append(AbstractCompactedRow row) throws IOException
+    /** Appends a compacted row and optionally computes a header/cache entry. */
+    public RowHeader append(AbstractCompactedRow row, boolean computeHeader) throws IOException
     {
-        long startPosition = beforeAppend(row.key);
+        long startPosition = beforeAppend(row.key, row.getMetadata());
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
         row.write(dataFile, rowObserver);
+        RowHeader header = null;
+        if (computeHeader)
+        {
+            // use the observed data to create a row header
+            long dataSize = dataFile.getFilePointer() - startPosition;
+            if (dataSize > DatabaseDescriptor.getColumnIndexSize())
+            {
+                // row is wide enough for a nested entry
+                ColumnFamily meta = row.getMetadata();
+                ByteBuffer min = null, max = null;
+                if (!rowObserver.names.get(0).isEmpty())
+                {
+                    // the min and max top level column are guaranteed to be observed
+                    // by NestedIndexWriter's Observer
+                    List<ByteBuffer> n = rowObserver.names.get(0);
+                    min = n.get(0);
+                    max = n.get(n.size() - 1);
+                }
+                header = new NestedRowHeader(startPosition,
+                                             meta.getMarkedForDeleteAt(),
+                                             meta.getLocalDeletionTime(),
+                                             min,
+                                             max);
+            }
+            else
+            {
+                header = new RowHeader(startPosition);
+            }
+        }
         afterAppend(row.key, startPosition);
-        return startPosition;
+        return header;
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
     {
-        long startPosition = beforeAppend(decoratedKey);
+        long startPosition = beforeAppend(decoratedKey, cf);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
         ColumnFamily.serializer().serializeForSSTable(cf, dataFile, rowObserver);
         afterAppend(decoratedKey, startPosition);
@@ -144,7 +175,8 @@ public class SSTableWriter extends SSTable
     @Deprecated
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
-        long startPosition = beforeAppend(decoratedKey);
+        assert false : "FIXME: Need to deserialize blob to index.";
+        long startPosition = beforeAppend(decoratedKey, null);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
         assert value.remaining() > 0;
         dataFile.writeLong(value.remaining());

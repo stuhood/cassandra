@@ -91,6 +91,11 @@ public class PrecompactedRow extends AbstractCompactedRow
         }
     }
 
+    public ColumnFamily getMetadata()
+    {
+        return compactedCf;
+    }
+
     public void write(RandomAccessFile out, Observer rowObserver) throws IOException
     {
         assert compactedCf != null : key + " for " + out;

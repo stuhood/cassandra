@@ -51,6 +51,8 @@ class NestedIndexWriter extends IndexWriter
     protected final List<Observer.IndexedBitSet> parents;
     // TODO: avoid boxing
     protected final List<Long> offsets;
+    protected final List<Long> markedForDeleteAt;
+    protected final List<Long> localDeletionTime;
 
     protected NestedIndexWriter(Descriptor desc, CFMetaData meta, IPartitioner part, long keyCount) throws IOException
     {
@@ -65,6 +67,8 @@ class NestedIndexWriter extends IndexWriter
             this.parents.add(new Observer.IndexedBitSet(1024));
         }
         this.offsets = new ArrayList<Long>();
+        this.markedForDeleteAt = new ArrayList<Long>();
+        this.localDeletionTime = new ArrayList<Long>();
     }
 
     /** @return An Observer to collect tuples from rows in the data file. */
@@ -84,6 +88,10 @@ class NestedIndexWriter extends IndexWriter
         };
     }
 
+    /**
+     * TODO: this copying is necessary because SSTableWriter can be reset mid row:
+     * the contents it observes per row need to go into a temporary buffer.
+     */
     @Override
     protected void appendToIndex(Observer observer, long dataSize) throws IOException
     {
@@ -102,8 +110,6 @@ class NestedIndexWriter extends IndexWriter
         summary.incrementRowid();
 
         // copy observed positions into our storage
-        // TODO: this copying is necessary because SSTableWriter can be reset mid row,
-        // so the contents it observes go into a temporary buffer
         for (DecoratedKey key : observer.keys)
             this.tuples.get(0).add(key.key);
         for (int i = 1; i < this.tuples.size(); i++)
@@ -112,6 +118,8 @@ class NestedIndexWriter extends IndexWriter
             this.tuples.get(i).addAll(observer.names.get(i - 1));
         }
         this.offsets.addAll(observer.offsets);
+        this.markedForDeleteAt.addAll(observer.markedForDeleteAt);
+        this.localDeletionTime.addAll(observer.localDeletionTime);
     }
 
     /**
@@ -139,13 +147,7 @@ class NestedIndexWriter extends IndexWriter
         }
 
         // encode the offsets using the LongType primitive
-        LongType.encode(new LongType.LongCollection(offsets.size())
-        {
-            public long get(int i)
-            {
-                return offsets.get(i);
-            }
-        }, indexFile);
+        LongType.encode(new LongList(offsets), indexFile);
 
         logger.debug("Wrote block of {} positions in {} bytes", offsets.size(), indexFile.getFilePointer() - start);
         clear();
@@ -158,5 +160,24 @@ class NestedIndexWriter extends IndexWriter
         for (int i = 0; i < parents.size(); i++)
             parents.get(i).clear();
         offsets.clear();
+        markedForDeleteAt.clear();
+        localDeletionTime.clear();
+    }
+
+    // TODO: the point of LongCollection was to avoid boxing: need
+    // an implementation of LongList that doesn't box
+    private static final class LongList extends LongType.LongCollection
+    {
+        private final List<Long> list;
+        public LongList(List<Long> list)
+        {
+            super(list.size());
+            this.list = list;
+        }
+        
+        public long get(int i)
+        {
+            return list.get(i);
+        }
     }
 }
