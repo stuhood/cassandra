@@ -50,6 +50,7 @@ import org.junit.Test;
 
 public class SSTableImportTest extends SchemaLoader
 {   
+    private final ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "Standard1");
     @Test
     public void testImportSimpleCf() throws IOException
     {
@@ -61,7 +62,7 @@ public class SSTableImportTest extends SchemaLoader
         // Verify results
         SSTableReader reader = SSTableReader.open(Descriptor.fromFilename(tempSS.getPath()));
         QueryFilter qf = QueryFilter.getIdentityFilter(Util.dk("rowA"), new QueryPath("Standard1"));
-        IColumnIterator iter = qf.getSSTableColumnIterator(reader);
+        IColumnIterator iter = qf.getSSTableColumnIterator(reader, cfamily);
         ColumnFamily cf = iter.getColumnFamily();
         while (iter.hasNext()) cf.addColumn(iter.next());
         assert cf.getColumn(ByteBufferUtil.bytes("colAA")).value().equals(hexToBytes("76616c4141"));
@@ -83,7 +84,7 @@ public class SSTableImportTest extends SchemaLoader
         // Verify results
         SSTableReader reader = SSTableReader.open(Descriptor.fromFilename(tempSS.getPath()));
         QueryFilter qf = QueryFilter.getIdentityFilter(Util.dk("rowA"), new QueryPath("Standard1"));
-        IColumnIterator iter = qf.getSSTableColumnIterator(reader);
+        IColumnIterator iter = qf.getSSTableColumnIterator(reader, cfamily);
         ColumnFamily cf = iter.getColumnFamily();
         while (iter.hasNext()) cf.addColumn(iter.next());
         assert cf.getColumn(ByteBufferUtil.bytes("colAA")).value().equals(hexToBytes("76616c4141"));
@@ -104,7 +105,7 @@ public class SSTableImportTest extends SchemaLoader
         // Verify results
         SSTableReader reader = SSTableReader.open(Descriptor.fromFilename(tempSS.getPath()));
         QueryFilter qf = QueryFilter.getNamesFilter(Util.dk("rowA"), new QueryPath("Super4", null, null), ByteBufferUtil.bytes("superA"));
-        ColumnFamily cf = qf.getSSTableColumnIterator(reader).getColumnFamily();
+        ColumnFamily cf = qf.getSSTableColumnIterator(reader, cfamily).getColumnFamily();
         IColumn superCol = cf.getColumn(ByteBufferUtil.bytes("superA"));
         assert superCol != null;
         assert superCol.getSubColumns().size() > 0;
@@ -137,7 +138,7 @@ public class SSTableImportTest extends SchemaLoader
         // Verify results
         SSTableReader reader = SSTableReader.open(Descriptor.fromFilename(tempSS.getPath()));
         QueryFilter qf = QueryFilter.getIdentityFilter(Util.dk("rowA"), new QueryPath("Counter1"));
-        IColumnIterator iter = qf.getSSTableColumnIterator(reader);
+        IColumnIterator iter = qf.getSSTableColumnIterator(reader, cfamily);
         ColumnFamily cf = iter.getColumnFamily();
         while (iter.hasNext()) cf.addColumn(iter.next());
         IColumn c = cf.getColumn(ByteBufferUtil.bytes("colAA"));

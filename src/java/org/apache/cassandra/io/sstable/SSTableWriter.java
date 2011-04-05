@@ -24,6 +24,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
@@ -110,10 +111,7 @@ public class SSTableWriter extends SSTable
             logger.info("Writing into file " + getFilename());
             throw new IOException("Keys must be written in ascending order.");
         }
-        long position = (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
-        if (rowObserver.shouldAdd(0, false))
-            rowObserver.add(decoratedKey, position);
-        return position;
+        return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
     private void afterAppend(DecoratedKey key, long startPosition) throws IOException
@@ -126,33 +124,52 @@ public class SSTableWriter extends SSTable
         lastWrittenKey = key;
     }
 
-    public long append(AbstractCompactedRow row) throws IOException
+    /** Appends a compacted row and optionally computes a header/cache entry. */
+    public RowHeader append(AbstractCompactedRow row, boolean computeHeader) throws IOException
     {
         long startPosition = beforeAppend(row.key);
+        rowObserver.add(row.key, startPosition);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile);
         row.write(dataFile, rowObserver);
+        RowHeader header = null;
+        if (computeHeader)
+        {
+            header = new RowHeader(startPosition);
+        }
         afterAppend(row.key, startPosition);
-        return startPosition;
+        return header;
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
     {
         long startPosition = beforeAppend(decoratedKey);
+        rowObserver.add(decoratedKey, startPosition);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
-        ColumnFamily.serializer().serializeForSSTable(cf, dataFile, rowObserver);
+        if (cf.serializedSize() < DatabaseDescriptor.getColumnIndexSize())
+            // serialize with a simple index entry
+            ColumnFamily.serializer().serializeForSSTable(cf, dataFile, Observer.NOOP);
+        else
+        {
+            // serialize with a complex index entry: metadata and column blocks
+            rowObserver.add(cf);
+            ColumnFamily.serializer().serializeForSSTable(cf, dataFile, rowObserver);
+        }
         afterAppend(decoratedKey, startPosition);
     }
 
-    @Deprecated
+    /**
+     * Appends data without deserializing, leading to a basic index entry which can't
+     * be used to eliminate the row at query time.
+     */
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
         long startPosition = beforeAppend(decoratedKey);
+        rowObserver.add(decoratedKey, startPosition);
         ByteBufferUtil.writeWithShortLength(decoratedKey.key, dataFile);
         assert value.remaining() > 0;
         dataFile.writeLong(value.remaining());
         ByteBufferUtil.write(value, dataFile);
         afterAppend(decoratedKey, startPosition);
-        logger.warn("Appended " + decoratedKey + " as an unindexable blob.");
     }
 
     public SSTableReader closeAndOpenReader() throws IOException

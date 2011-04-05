@@ -27,6 +27,7 @@ import java.io.RandomAccessFile;
 import java.security.MessageDigest;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.io.sstable.Observer;
 
 /**
@@ -42,6 +43,9 @@ public abstract class AbstractCompactedRow
     {
         this.key = key;
     }
+
+    /** @return A column family holding metadata for this row. Not guaranteed to contain any columns. */
+    public abstract ColumnFamily getMetadata();
 
     /**
      * write the row (size + column index + filter + column data, but NOT row key) to @param out

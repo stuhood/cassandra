@@ -57,11 +57,7 @@ public class LazilyCompactedRowTest extends CleanupHelper
         CompactionIterator ci1 = new CompactionIterator(CompactionType.UNKNOWN, sstables, new PreCompactingController(cfs, sstables, gcBefore, false));
         CompactionIterator ci2 = new CompactionIterator(CompactionType.UNKNOWN, sstables, new LazilyCompactingController(cfs, sstables, gcBefore, false));
  
-        // observe all content via size threshold of 1 byte (would otherwise be used for indexing)
         int depth = cfs.metadata.cfType == ColumnFamilyType.Super ? 3 : 2;
-        Observer obs1 = new AllObserver(depth);
-        Observer obs2 = new AllObserver(depth);
-
         while (true)
         {
             if (!ci1.hasNext())
@@ -72,6 +68,9 @@ public class LazilyCompactedRowTest extends CleanupHelper
 
             AbstractCompactedRow row1 = ci1.next();
             AbstractCompactedRow row2 = ci2.next();
+            // observe all content via size threshold of 1 byte (would otherwise be used for indexing)
+            Observer obs1 = new AllObserver(depth);
+            Observer obs2 = new AllObserver(depth);
 
             // flush each row to a temporary file
             File tmpFile1 = File.createTempFile("lcrt1", null);
@@ -80,7 +79,9 @@ public class LazilyCompactedRowTest extends CleanupHelper
             tmpFile2.deleteOnExit();
             RandomAccessFile out1 = new RandomAccessFile(tmpFile1, "rw");
             RandomAccessFile out2 = new RandomAccessFile(tmpFile2, "rw");
+            obs1.add(row1.key, 0);
             row1.write(out1, obs1);
+            obs2.add(row2.key, 0);
             row2.write(out2, obs2);
             long out1Length = out1.length();
             long out2Length = out2.length();
@@ -130,11 +131,8 @@ public class LazilyCompactedRowTest extends CleanupHelper
             // that should be everything
             assert in1.available() == 0;
             assert in2.available() == 0;
+            assertEquals(obs1.keys, obs2.keys);
         }
-        assertEquals(obs1.keys, obs2.keys);
-        assertEquals(obs1.names, obs2.names);
-        // offsets can differ because of bloom filter counts being different
-        // assertEquals(obs1.offsets, obs2.offsets);
     }
     
     private void assertDigest(ColumnFamilyStore cfs, int gcBefore) throws IOException, NoSuchAlgorithmException

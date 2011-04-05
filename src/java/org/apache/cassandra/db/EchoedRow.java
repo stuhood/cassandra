@@ -21,6 +21,11 @@ public class EchoedRow extends AbstractCompactedRow
         this.row = row;
     }
 
+    public ColumnFamily getMetadata()
+    {
+        return row.getColumnFamily();
+    }
+
     public void write(RandomAccessFile out, Observer observer) throws IOException
     {
         assert row.dataSize > 0;

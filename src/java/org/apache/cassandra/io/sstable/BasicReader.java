@@ -144,7 +144,7 @@ public class BasicReader extends SSTableReader
                     if (shouldAddEntry)
                         indexSummary.addEntry(decoratedKey, indexPosition);
                     if (cacheLoading && keysToLoadInCache.contains(decoratedKey))
-                        cacheKey(decoratedKey, dataPosition);
+                        cacheKey(decoratedKey, new RowHeader(dataPosition));
                 }
 
                 indexSummary.incrementRowid();
@@ -164,7 +164,7 @@ public class BasicReader extends SSTableReader
     }
 
     @Override
-    protected long getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op)
+    protected RowHeader getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op)
     {
         // scan the on-disk index, starting at the nearest sampled position
         Iterator<FileDataInput> segments = ifile.iterator(sampledPosition.indexPosition, INDEX_FILE_BUFFER_BYTES);
@@ -183,20 +183,21 @@ public class BasicReader extends SSTableReader
                     int v = op.apply(comparison);
                     if (v == 0)
                     {
+                        RowHeader header = new RowHeader(dataPosition);
                         if (comparison == 0 && keyCache != null && keyCache.getCapacity() > 0 && decoratedKey.key != null)
                         {
                             // store exact match for the key
-                            cacheKey(decoratedKey, dataPosition);
+                            cacheKey(decoratedKey, header);
                         }
                         if (op == Operator.EQ)
                             bloomFilterTracker.addTruePositive();
-                        return dataPosition;
+                        return header;
                     }
                     if (v < 0)
                     {
                         if (op == Operator.EQ)
                             bloomFilterTracker.addFalsePositive();
-                        return -1;
+                        return null;
                     }
                 }
             }
@@ -212,6 +213,6 @@ public class BasicReader extends SSTableReader
 
         if (op == Operator.EQ)
             bloomFilterTracker.addFalsePositive();
-        return -1;
+        return null;
     }
 }

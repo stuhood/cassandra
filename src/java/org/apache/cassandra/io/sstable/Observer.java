@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.utils.obs.OpenBitSet;
 
@@ -50,18 +51,23 @@ public abstract class Observer
     protected long count;
     protected final long countThreshold;
 
+    // list of observed keys
     public final List<DecoratedKey> keys;
-    // list of observed column names per level
+    // sparse lists of metadata using the same parent-bit encoding as names
+    public final List<Long> markedForDeleteAt;
+    public final List<Long> localDeletionTime;
+    public final IndexedBitSet metaparent;
+    // a sparse list of observed column names per level
     public final List<List<ByteBuffer>> names;
-    // a bitset per level that toggles when the parent changes
     public final List<IndexedBitSet> nameparents;
-    // a boolean to record the parent flag between resets: a successful reset stores
-    // the final parent flag at each level: an unsuccessful reset does not
-    // TODO: this is to assist blocking, despite the fact single rows are observed
-    public final boolean[] leading;
-    // the absolute offsets of the observed entries
-    // TODO: avoid boxing
+    // the absolute offsets of the observed entries (currently boxed: yuck)
     public final List<Long> offsets;
+
+    // booleans to record the parent flag between resets: a successful reset stores
+    // the final parent flag at each level: an unsuccessful reset does not
+    // (this is to assist blocking, since we observe/reset at the row level: see reset(boolean))
+    public final boolean[] nameslead;
+    public boolean metalead;
 
     public Observer(int depth, int expectedEntries, long sizeThreshold, long countThreshold)
     {
@@ -70,6 +76,9 @@ public abstract class Observer
         this.count = 0;
         this.countThreshold = countThreshold;
         this.keys = new ArrayList<DecoratedKey>(expectedEntries);
+        this.markedForDeleteAt = new ArrayList<Long>(expectedEntries);
+        this.localDeletionTime = new ArrayList<Long>(expectedEntries);
+        this.metaparent = new IndexedBitSet(expectedEntries);
         this.names = new ArrayList<List<ByteBuffer>>(depth - 1);
         this.nameparents = new ArrayList<IndexedBitSet>(depth - 1);
         for (int i = 1; i < depth; i++)
@@ -77,7 +86,7 @@ public abstract class Observer
             this.names.add(new ArrayList<ByteBuffer>(expectedEntries));
             this.nameparents.add(new IndexedBitSet(expectedEntries));
         }
-        this.leading = new boolean[depth - 1];
+        this.nameslead = new boolean[depth - 1];
         this.offsets = new ArrayList<Long>();
     }
 
@@ -101,15 +110,31 @@ public abstract class Observer
         size += bytes;
     }
 
-    /** Adds a key that shouldAdd requested. */
+    /**
+     * Adds a row key.
+     */
     public void add(DecoratedKey key, long position)
     {
-        assert keys.isEmpty() : "TODO: Observer can only observe a row at a time";
+        assert keys.isEmpty() : "Observer can only observe a row at a time";
         keys.add(key);
         offsets.add(position);
-        // toggle the parents of our children, creating implicit "empty" children
-        toggleFrom(1);
+        // toggle the parent flag for metadata
+        increment(metaparent, metalead, true);
+        // toggle the parents of child names, creating implicit "empty" children
+        incrementNamesFrom(1, true);
         size = 0;
+    }
+
+    /**
+     * Adds metadata for the children of the current row key.
+     */
+    public void add(ColumnFamily meta)
+    {
+        assert keys.size() == 1 : "A key is not being observed.";
+        markedForDeleteAt.add(meta.getMarkedForDeleteAt());
+        localDeletionTime.add((long)meta.getLocalDeletionTime());
+        // increment the metadata index without toggling
+        increment(metaparent, metalead, false);
     }
 
     /** Adds a name that shouldAdd requested at the particular depth. */
@@ -118,25 +143,29 @@ public abstract class Observer
         names.get(depth - 1).add(name);
         offsets.add(position);
         // increment our own index without toggling
-        incrementAt(depth, false);
+        incrementNamesAt(depth, false);
         // and toggle and increment our children (if we have any)
-        toggleFrom(depth + 1);
+        incrementNamesFrom(depth + 1, true);
         size = 0;
     }
 
-    /** Increments the count of names and toggles the parent flag below depth. */
-    private void toggleFrom(int depth)
+    /** Toggles the parent flag below depth. */
+    private void incrementNamesFrom(int depth, boolean toggle)
     {
         for (; depth <= names.size(); depth++)
             // toggle the parent bit and increment
-            incrementAt(depth, true);
+            incrementNamesAt(depth, toggle);
     }
 
-    private void incrementAt(int depth, boolean toggle)
+    private void incrementNamesAt(int depth, boolean toggle)
     {
-        IndexedBitSet p = nameparents.get(depth - 1);
+        increment(nameparents.get(depth - 1), nameslead[depth - 1], toggle);
+    }
+
+    private void increment(IndexedBitSet p, boolean leading, boolean toggle)
+    {
         // get the current value of the parent flag at this level
-        boolean current = p.index == 0 ? leading[depth - 1] : p.get(p.index - 1);
+        boolean current = p.index == 0 ? leading : p.get(p.index - 1);
         if (current ^ toggle)
             p.set(p.index);
         p.index++;
@@ -145,24 +174,34 @@ public abstract class Observer
     /**
      * Resets the observer for use on a new row: true if the content was successfully
      * captured, false otherwise.
-     * TODO: The annoying stateful-ness could be removed if an observer
-     * observed an entire block in one go
      */
     public void reset(boolean success)
     {
         count = 0;
         size = 0;
         keys.clear();
+        markedForDeleteAt.clear();
+        localDeletionTime.clear();
+        metalead = leadAndClear(metaparent, metalead, success);
         for (int i = 0; i < names.size(); i++)
         {
             names.get(i).clear();
-            IndexedBitSet p = nameparents.get(i);
-            if (success && p.index > 0)
-                // record the new leading parent flag
-                leading[i] = p.get(p.index - 1);
-            p.clear();
+            nameslead[i] = leadAndClear(nameparents.get(i), nameslead[i], success);
         }
         offsets.clear();
+    }
+
+    /**
+     * The annoying stateful-ness of the "lead" booleans could be removed if an
+     * observer observed an entire block in one go.
+     */
+    public boolean leadAndClear(IndexedBitSet p, boolean lead, boolean success)
+    {
+        if (success)
+            // record the new nameslead parent flag
+            lead = p.get(p.index - 1);
+        p.clear();
+        return lead;
     }
 
     public String toString()

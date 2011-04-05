@@ -271,17 +271,15 @@ public class ColumnFamily implements IColumnContainer, IIterableColumns
         columns.remove(columnName);
     }
 
-    @Deprecated // TODO this is a hack to set initial value outside constructor
     public void delete(int localtime, long timestamp)
     {
-        localDeletionTime.set(localtime);
-        markedForDeleteAt.set(timestamp);
+        FBUtilities.atomicSetMax(localDeletionTime, localtime); // do this first so we won't have a column that's "deleted" but has no local deletion time
+        FBUtilities.atomicSetMax(markedForDeleteAt, timestamp);
     }
 
     public void delete(ColumnFamily cf2)
     {
-        FBUtilities.atomicSetMax(localDeletionTime, cf2.getLocalDeletionTime()); // do this first so we won't have a column that's "deleted" but has no local deletion time
-        FBUtilities.atomicSetMax(markedForDeleteAt, cf2.getMarkedForDeleteAt());
+        delete(cf2.getLocalDeletionTime(), cf2.getMarkedForDeleteAt());
     }
 
     public boolean isMarkedForDelete()

@@ -113,7 +113,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
     protected final EstimatedHistogram estimatedRowSize;
     protected final EstimatedHistogram estimatedColumnCount;
 
-    protected InstrumentingCache<Pair<Descriptor,DecoratedKey>, Long> keyCache;
+    protected InstrumentingCache<Pair<Descriptor,DecoratedKey>, RowHeader> keyCache;
 
     protected BloomFilterTracker bloomFilterTracker = new BloomFilterTracker();
 
@@ -418,40 +418,37 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
         List<Pair<Long,Long>> positions = new ArrayList<Pair<Long,Long>>();
         for (AbstractBounds range : AbstractBounds.normalize(ranges))
         {
-            long left = getPosition(new DecoratedKey(range.left, null), Operator.GT);
-            if (left == -1)
+            RowHeader left = getPosition(new DecoratedKey(range.left, null), Operator.GT);
+            if (left == null)
                 // left is past the end of the file
                 continue;
-            long right = getPosition(new DecoratedKey(range.right, null), Operator.GT);
-            if (right == -1 || Range.isWrapAround(range.left, range.right))
+            RowHeader right = getPosition(new DecoratedKey(range.right, null), Operator.GT);
+            long rightPos = right != null && !Range.isWrapAround(range.left, range.right) ?
+                right.position() :
                 // right is past the end of the file, or it wraps
-                right = length();
-            if (left == right)
+                length();
+            if (left.position() == rightPos)
                 // empty range
                 continue;
-            positions.add(new Pair(Long.valueOf(left), Long.valueOf(right)));
+            positions.add(new Pair(Long.valueOf(left.position()), Long.valueOf(rightPos)));
         }
         return positions;
     }
 
-    public void cacheKey(DecoratedKey key, Long info)
+    public void cacheKey(DecoratedKey key, RowHeader info)
     {
         assert key.key != null;
         // avoid keeping a permanent reference to the original key buffer
+        // FIXME: clone the min/max values in the header, if they exist
         DecoratedKey copiedKey = new DecoratedKey(key.token, ByteBufferUtil.clone(key.key));
         keyCache.put(new Pair<Descriptor, DecoratedKey>(descriptor, copiedKey), info);
     }
 
-    public Long getCachedPosition(DecoratedKey key)
+    public RowHeader getCachedPosition(DecoratedKey key)
     {
-        return getCachedPosition(new Pair<Descriptor, DecoratedKey>(descriptor, key));
-    }
-
-    private Long getCachedPosition(Pair<Descriptor, DecoratedKey> unifiedKey)
-    {
-        if (keyCache != null && keyCache.getCapacity() > 0)
-            return keyCache.get(unifiedKey);
-        return null;
+        if (keyCache == null || keyCache.getCapacity() <= 0)
+            return null;
+        return keyCache.get(new Pair<Descriptor, DecoratedKey>(descriptor, key));
     }
 
     /** get the position in the index file to start scanning to find the given key (at most indexInterval keys away) */
@@ -479,23 +476,22 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
      * @param op The Operator defining matching keys: the nearest key to the target matching the operator wins.
      * @return The position in the data file to find the key, or -1 if the key is not present
      */
-    public long getPosition(DecoratedKey decoratedKey, Operator op)
+    public RowHeader getPosition(DecoratedKey decoratedKey, Operator op)
     {
         // first, check bloom filter
         if (op == Operator.EQ)
         {
             assert decoratedKey.key != null; // null is ok for GE scans
             if (!bf.isPresent(decoratedKey.key))
-                return -1;
+                return null;
         }
 
         // next, the key cache
         if (op == Operator.EQ || op == Operator.GE)
         {
-            Pair<Descriptor, DecoratedKey> unifiedKey = new Pair<Descriptor, DecoratedKey>(descriptor, decoratedKey);
-            Long cachedPosition = getCachedPosition(unifiedKey);
-            if (cachedPosition != null)
-                return cachedPosition;
+            RowHeader cachedHeader = getCachedPosition(decoratedKey);
+            if (cachedHeader != null)
+                return cachedHeader;
         }
 
         // see if the sampled index says it's impossible for the key to be present
@@ -505,7 +501,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
             if (op == Operator.EQ)
                 bloomFilterTracker.addFalsePositive();
             // we matched the -1th position: if the operator might match forward, return the 0th position
-            return op.apply(1) >= 0 ? 0 : -1;
+            return op.apply(1) >= 0 ? new RowHeader(0) : null;
         }
 
         return getPositionFromIndex(sampledPosition, decoratedKey, op);
@@ -515,7 +511,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
      * @return By reading from the index file, the position of the given key in the data file, or -1.
      * If the given key is matched exactly it should be cached.
      */
-    protected abstract long getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op);
+    protected abstract RowHeader getPositionFromIndex(IndexSummary.KeyPosition sampledPosition, DecoratedKey decoratedKey, Operator op);
 
     /**
      * @return The length in bytes of the data file for this SSTable.
@@ -572,13 +568,11 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
         return new SSTableBoundedScanner(this, bufferSize, true, range);
     }
 
-    public FileDataInput getFileDataInput(DecoratedKey decoratedKey, int bufferSize)
+    public FileDataInput getFileDataInput(RowHeader header, int bufferSize)
     {
-        long position = getPosition(decoratedKey, Operator.EQ);
-        if (position < 0)
+        if (header == null)
             return null;
-
-        return dfile.getSegment(position, bufferSize);
+        return dfile.getSegment(header.position(), bufferSize);
     }
 
     public int compareTo(SSTableReader o)
@@ -716,7 +710,7 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
         return bloomFilterTracker.getRecentTruePositiveCount();
     }
 
-    public InstrumentingCache<Pair<Descriptor,DecoratedKey>, Long> getKeyCache()
+    public InstrumentingCache<Pair<Descriptor,DecoratedKey>, RowHeader> getKeyCache()
     {
         return keyCache;
     }

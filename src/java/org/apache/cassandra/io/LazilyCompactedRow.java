@@ -33,6 +33,7 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.Iterators;
 import org.apache.commons.collections.iterators.CollatingIterator;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ColumnIndexer;
@@ -94,6 +95,11 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         iter = null;
     }
 
+    public ColumnFamily getMetadata()
+    {
+        return emptyColumnFamily;
+    }
+
     public void write(RandomAccessFile out, Observer observer) throws IOException
     {
         DataOutputBuffer clockOut = new DataOutputBuffer();
@@ -106,6 +112,8 @@ public class LazilyCompactedRow extends AbstractCompactedRow implements IIterabl
         out.write(clockOut.getData(), 0, clockOut.getLength());
         out.writeInt(columnCount);
 
+        // observe all content as we serialize it
+        observer.add(emptyColumnFamily);
         for (Iterator<IColumn> iter = iterator(); iter.hasNext();)
         {
             IColumn column = iter.next();

@@ -117,7 +117,8 @@ public class SSTableReaderTest extends CleanupHelper
         for (int j = 0; j < 100; j += 2)
         {
             DecoratedKey dk = Util.dk(String.valueOf(j));
-            FileDataInput file = sstable.getFileDataInput(dk, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
+            RowHeader header = sstable.getPosition(dk, SSTableReader.Operator.EQ);
+            FileDataInput file = sstable.getFileDataInput(header, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
             DecoratedKey keyInDisk = SSTableReader.decodeKey(sstable.partitioner,
                                                              sstable.descriptor,
                                                              ByteBufferUtil.readWithShortLength(file));
@@ -128,7 +129,7 @@ public class SSTableReaderTest extends CleanupHelper
         for (int j = 1; j < 110; j += 2)
         {
             DecoratedKey dk = Util.dk(String.valueOf(j));
-            assert sstable.getPosition(dk, SSTableReader.Operator.EQ) == -1;
+            assert sstable.getPosition(dk, SSTableReader.Operator.EQ) == null;
         }
     }
 
@@ -170,18 +171,18 @@ public class SSTableReaderTest extends CleanupHelper
         CompactionManager.instance.performMajor(store);
 
         SSTableReader sstable = store.getSSTables().iterator().next();
-        long p2 = sstable.getPosition(k(2), SSTableReader.Operator.EQ);
-        long p3 = sstable.getPosition(k(3), SSTableReader.Operator.EQ);
-        long p6 = sstable.getPosition(k(6), SSTableReader.Operator.EQ);
-        long p7 = sstable.getPosition(k(7), SSTableReader.Operator.EQ);
+        RowHeader p2 = sstable.getPosition(k(2), SSTableReader.Operator.EQ);
+        RowHeader p3 = sstable.getPosition(k(3), SSTableReader.Operator.EQ);
+        RowHeader p6 = sstable.getPosition(k(6), SSTableReader.Operator.EQ);
+        RowHeader p7 = sstable.getPosition(k(7), SSTableReader.Operator.EQ);
 
         Pair<Long, Long> p = sstable.getPositionsForRanges(makeRanges(t(2), t(6))).iterator().next();
 
         // range are start exclusive so we should start at 3
-        assert p.left == p3;
+        assert p.left == p3.position();
 
         // to capture 6 we have to stop at the start of 7
-        assert p.right == p7;
+        assert p.right == p7.position();
     }
 
     private List<Range> makeRanges(Token left, Token right)

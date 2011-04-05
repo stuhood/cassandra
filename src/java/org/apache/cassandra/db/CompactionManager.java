@@ -555,7 +555,7 @@ public class CompactionManager implements CompactionManagerMBean
         SSTableWriter writer;
         CompactionIterator ci = new CompactionIterator(type, sstables, controller); // retain a handle so we can call close()
         Iterator<AbstractCompactedRow> nni = new FilterIterator(ci, PredicateUtils.notNullPredicate());
-        Map<DecoratedKey, Long> cachedKeys = new HashMap<DecoratedKey, Long>();
+        Map<DecoratedKey,RowHeader> cachedKeys = new HashMap<DecoratedKey,RowHeader>();
 
         executor.beginCompaction(ci);
         try
@@ -573,20 +573,10 @@ public class CompactionManager implements CompactionManagerMBean
             while (nni.hasNext())
             {
                 AbstractCompactedRow row = nni.next();
-                long position = writer.append(row);
+                RowHeader header = writer.append(row, shouldPreheat(sstables, row.key));
                 totalkeysWritten++;
-
-                if (DatabaseDescriptor.getPreheatKeyCache())
-                {
-                    for (SSTableReader sstable : sstables)
-                    {
-                        if (sstable.getCachedPosition(row.key) != null)
-                        {
-                            cachedKeys.put(row.key, position);
-                            break;
-                        }
-                    }
-                }
+                if (header != null)
+                    cachedKeys.put(row.key, header);
             }
         }
         finally
@@ -597,7 +587,8 @@ public class CompactionManager implements CompactionManagerMBean
 
         SSTableReader ssTable = writer.closeAndOpenReader(getMaxDataAge(sstables));
         cfs.replaceCompactedSSTables(sstables, Arrays.asList(ssTable));
-        for (Entry<DecoratedKey, Long> entry : cachedKeys.entrySet()) // empty if preheat is off
+        // TODO: bulk add would be nice
+        for (Entry<DecoratedKey, RowHeader> entry : cachedKeys.entrySet()) // empty if preheat is off
             ssTable.cacheKey(entry.getKey(), entry.getValue());
         submitMinorIfNeeded(cfs);
 
@@ -608,6 +599,17 @@ public class CompactionManager implements CompactionManagerMBean
         logger.info(String.format("Compacted to %s.  %,d to %,d (~%d%% of original) bytes for %,d keys.  Time: %,dms.",
                                   writer.getFilename(), startsize, endsize, (int) (ratio * 100), totalkeysWritten, dTime));
         return sstables.size();
+    }
+
+    /** @return True if preheating is enabled and the key is cached for an sstable. */
+    private static boolean shouldPreheat(Collection<SSTableReader> sstables, DecoratedKey key)
+    {
+        if (!DatabaseDescriptor.getPreheatKeyCache())
+            return false;
+        for (SSTableReader sstable : sstables)
+            if (sstable.getCachedPosition(key) != null)
+                return true;
+        return false;
     }
 
     private static long getMaxDataAge(Collection<SSTableReader> sstables)
@@ -721,7 +723,7 @@ public class CompactionManager implements CompactionManagerMBean
                     }
                     else
                     {
-                        writer.append(compactedRow);
+                        writer.append(compactedRow, false);
                         goodRows++;
                     }
                     if (!key.key.equals(currentIndexKey) || dataStart != dataStartFromIndex)
@@ -749,7 +751,7 @@ public class CompactionManager implements CompactionManagerMBean
                             }
                             else
                             {
-                                writer.append(compactedRow);
+                                writer.append(compactedRow, false);
                                 goodRows++;
                             }
                         }
@@ -849,7 +851,7 @@ public class CompactionManager implements CompactionManagerMBean
                         if (Range.isTokenInRanges(row.getKey().token, ranges))
                         {
                             writer = maybeCreateWriter(cfs, compactionFileLocation, expectedBloomFilterSize, writer, Collections.singletonList(sstable));
-                            writer.append(controller.getCompactedRow(row));
+                            writer.append(controller.getCompactedRow(row), false);
                             totalkeysWritten++;
                         }
                         else

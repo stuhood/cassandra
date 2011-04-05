@@ -33,6 +33,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ColumnIndexer;
@@ -91,10 +92,22 @@ public class PrecompactedRow extends AbstractCompactedRow
         }
     }
 
+    public ColumnFamily getMetadata()
+    {
+        return compactedCf;
+    }
+
     public void write(RandomAccessFile out, Observer rowObserver) throws IOException
     {
         assert compactedCf != null : key + " for " + out;
-        ColumnFamily.serializer().serializeForSSTable(compactedCf, out, rowObserver);
+        if (compactedCf.serializedSize() < DatabaseDescriptor.getColumnIndexSize())
+            ColumnFamily.serializer().serializeForSSTable(compactedCf, out, Observer.NOOP);
+        else
+        {
+            // add metadata, and observe content as a wide row
+            rowObserver.add(compactedCf);
+            ColumnFamily.serializer().serializeForSSTable(compactedCf, out, rowObserver);
+        }
     }
 
     public void update(MessageDigest digest)
