@@ -102,7 +102,8 @@ public abstract class SSTableWriter extends SSTable
 
     public abstract void resetAndTruncate() throws IOError;
 
-    public abstract long append(AbstractCompactedRow row) throws IOException;
+    /** Appends a compacted row and optionally computes a header/cache entry. */
+    public abstract BlockHeader append(AbstractCompactedRow row, boolean computeHeader) throws IOException;
 
     public abstract void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException;
 

@@ -28,7 +28,7 @@ import java.nio.ByteBuffer;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.Chunk;
 import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -73,14 +73,16 @@ public class ChunkedSliceIterator implements IColumnIterator
         this.startColumn = startColumn;
         this.finishColumn = finishColumn;
         this.available = false;
-        // we opened this file handle: close it when finished
-        shouldClose = true;
-        this.file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
-        if (this.file == null)
+        BlockHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        if (header == null)
         {
             this.cursor = null;
+            this.file = null;
             return;
         }
+        // we opened this file handle: close it when finished
+        shouldClose = true;
+        this.file = sstable.getFileDataInput(header, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
         this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
         this.init();
         this.hasNext(); // eagerly load the chunk/key/cf

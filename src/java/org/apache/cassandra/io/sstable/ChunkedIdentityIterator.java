@@ -26,7 +26,8 @@ import java.io.DataOutput;
 import java.io.IOError;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;

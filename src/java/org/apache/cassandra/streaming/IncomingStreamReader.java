@@ -121,7 +121,7 @@ public class IncomingStreamReader
 
                     SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata, StorageService.getPartitioner(), localFile.desc, in, cursor, true);
                     AbstractCompactedRow row = controller.getCompactedRow(iter);
-                    writer.append(row);
+                    writer.append(row, false);
                     // row append does not update the max timestamp on its own
                     writer.updateMaxTimestamp(row.maxTimestamp());
 

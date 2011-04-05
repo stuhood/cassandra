@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.Chunk;
 import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
@@ -60,9 +60,10 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
         this.key = key;
         this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
 
-        FileDataInput file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
-        if (file == null)
+        BlockHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        if (header == null)
             return;
+        FileDataInput file = sstable.getFileDataInput(header, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
         try
         {
             read(file);

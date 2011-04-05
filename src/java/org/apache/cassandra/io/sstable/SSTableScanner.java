@@ -91,11 +91,25 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
 
     public void seekTo(DecoratedKey seekKey)
     {
+        seekTo(sstable.getPosition(seekKey, SSTableReader.Operator.GE));
+    }
+
+    public void seekTo(BlockHeader header)
+    {
+        if (header == null)
+        {
+            exhausted = true;
+            return;
+        }
+        seekUnsafe(header.position());
+    }
+
+    private void seekUnsafe(long position)
+    {
         try
         {
             if (row != null)
                 row.close();
-            long position = sstable.getPosition(seekKey, SSTableReader.Operator.GE);
             if (position < 0)
             {
                 exhausted = true;

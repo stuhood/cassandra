@@ -535,7 +535,7 @@ public class CompactionManager implements CompactionManagerMBean
                         }
                         else
                         {
-                            writer.append(compactedRow);
+                            writer.append(compactedRow, false);
                             goodRows++;
                         }
                         if (!row.getKey().key.equals(currentIndexKey) || rowStart != currentRowPositionFromIndex)
@@ -648,7 +648,7 @@ public class CompactionManager implements CompactionManagerMBean
                         if (compactedRow.isEmpty())
                             continue;
                         writer = maybeCreateWriter(cfs, compactionFileLocation, expectedBloomFilterSize, writer, Collections.singletonList(sstable));
-                        writer.append(compactedRow);
+                        writer.append(compactedRow, false);
                         totalkeysWritten++;
                     }
                     else

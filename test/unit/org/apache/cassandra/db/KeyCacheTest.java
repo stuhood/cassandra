@@ -32,6 +32,7 @@ import org.apache.cassandra.CleanupHelper;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.db.filter.QueryPath;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
@@ -77,7 +78,7 @@ public class KeyCacheTest extends CleanupHelper
         assertEquals(100, store.getKeyCacheSize());
 
         // really? our caches don't implement the map interface? (hence no .addAll)
-        Map<Pair<Descriptor, DecoratedKey>, Long> savedMap = new HashMap<Pair<Descriptor, DecoratedKey>, Long>();
+        Map<Pair<Descriptor, DecoratedKey>, BlockHeader> savedMap = new HashMap<Pair<Descriptor, DecoratedKey>, BlockHeader>();
         for (Pair<Descriptor, DecoratedKey> k : store.getKeyCache().getKeySet())
         {
             savedMap.put(k, store.getKeyCache().get(k));
@@ -96,7 +97,7 @@ public class KeyCacheTest extends CleanupHelper
         assert newStore.getKeyCacheSize() == 100;
 
         assert savedMap.size() == 100;
-        for (Map.Entry<Pair<Descriptor, DecoratedKey>, Long> entry : savedMap.entrySet())
+        for (Map.Entry<Pair<Descriptor, DecoratedKey>, BlockHeader> entry : savedMap.entrySet())
         {
             assert newStore.getKeyCache().get(entry.getKey()).equals(entry.getValue());
         }

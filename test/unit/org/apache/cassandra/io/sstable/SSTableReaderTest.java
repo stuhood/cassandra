@@ -130,18 +130,18 @@ public class SSTableReaderTest extends CleanupHelper
         CompactionManager.instance.performMaximal(store);
 
         SSTableReader sstable = store.getSSTables().iterator().next();
-        long p2 = sstable.getPosition(k(2), SSTableReader.Operator.EQ);
-        long p3 = sstable.getPosition(k(3), SSTableReader.Operator.EQ);
-        long p6 = sstable.getPosition(k(6), SSTableReader.Operator.EQ);
-        long p7 = sstable.getPosition(k(7), SSTableReader.Operator.EQ);
+        BlockHeader p2 = sstable.getPosition(k(2), SSTableReader.Operator.EQ);
+        BlockHeader p3 = sstable.getPosition(k(3), SSTableReader.Operator.EQ);
+        BlockHeader p6 = sstable.getPosition(k(6), SSTableReader.Operator.EQ);
+        BlockHeader p7 = sstable.getPosition(k(7), SSTableReader.Operator.EQ);
 
         Pair<Long, Long> p = sstable.getPositionsForRanges(makeRanges(t(2), t(6))).iterator().next();
 
         // range are start exclusive so we should start at 3
-        assert p.left == p3;
+        assert p.left == p3.position();
 
         // to capture 6 we have to stop at the start of 7
-        assert p.right == p7;
+        assert p.right == p7.position();
     }
 
     private List<Range> makeRanges(Token left, Token right)

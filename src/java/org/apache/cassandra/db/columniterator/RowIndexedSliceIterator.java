@@ -29,7 +29,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
-import org.apache.cassandra.io.sstable.SSTable;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
@@ -52,13 +52,16 @@ public class RowIndexedSliceIterator implements IColumnIterator
     {
         this.key = key;
         mark = null;
-        file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
-        if (file == null)
+
+        BlockHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        if (header == null)
         {
             this.rowLength = -1;
+            this.file = null;
             return;
         }
 
+        file = sstable.getFileDataInput(header, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
         try
         {
             this.rowLength = init(sstable);

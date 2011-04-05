@@ -265,6 +265,14 @@ public final class Cursor
     }
 
     /**
+     * @return A BlockHeader representing a summary of the current span.
+     */
+    public BlockHeader summarizeSpan(long position)
+    {
+        return new BlockHeader(position);
+    }
+
+    /**
      * Reads the next span of Chunks into this cursor.
      */
     public void nextSpan(DataInput file) throws IOException

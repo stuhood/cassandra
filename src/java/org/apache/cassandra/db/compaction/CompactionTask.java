@@ -38,6 +38,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.compaction.CompactionManager.CompactionExecutorStatsCollector;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableWriter;
@@ -133,7 +134,7 @@ public class CompactionTask extends AbstractCompactionTask
         CompactionIterable ci = new CompactionIterable(type, toCompact, controller); // retain a handle so we can call close()
         CloseableIterator<AbstractCompactedRow> iter = ci.iterator();
         Iterator<AbstractCompactedRow> nni = Iterators.filter(iter, Predicates.notNull());
-        Map<DecoratedKey, Long> cachedKeys = new HashMap<DecoratedKey, Long>();
+        Map<DecoratedKey, BlockHeader> cachedKeys = new HashMap<DecoratedKey, BlockHeader>();
 
         if (collector != null)
             collector.beginCompaction(ci);
@@ -155,20 +156,10 @@ public class CompactionTask extends AbstractCompactionTask
                 if (row.isEmpty())
                     continue;
                 
-                long position = writer.append(row);
+                BlockHeader header = writer.append(row, shouldPreheat(toCompact, row.key));
                 totalkeysWritten++;
-
-                if (DatabaseDescriptor.getPreheatKeyCache())
-                {
-                    for (SSTableReader sstable : toCompact)
-                    {
-                        if (sstable.getCachedPosition(row.key) != null)
-                        {
-                            cachedKeys.put(row.key, position);
-                            break;
-                        }
-                    }
-                }
+                if (header != null)
+                    cachedKeys.put(row.key, header);
             }
             ssTable = writer.closeAndOpenReader(getMaxDataAge(toCompact));
         }
@@ -182,7 +173,7 @@ public class CompactionTask extends AbstractCompactionTask
         }
 
         cfs.replaceCompactedSSTables(toCompact, Arrays.asList(ssTable));
-        for (Entry<DecoratedKey, Long> entry : cachedKeys.entrySet()) // empty if preheat is off
+        for (Entry<DecoratedKey, BlockHeader> entry : cachedKeys.entrySet()) // empty if preheat is off
             ssTable.cacheKey(entry.getKey(), entry.getValue());
         CompactionManager.instance.submitBackground(cfs);
 
@@ -193,6 +184,17 @@ public class CompactionTask extends AbstractCompactionTask
         logger.info(String.format("Compacted to %s.  %,d to %,d (~%d%% of original) bytes for %,d keys.  Time: %,dms.",
                 ssTable.getFilename(), startsize, endsize, (int) (ratio * 100), totalkeysWritten, dTime));
         return toCompact.size();
+    }
+
+    /** @return True if preheating is enabled and the key is cached for an sstable. */
+    private static boolean shouldPreheat(Collection<SSTableReader> sstables, DecoratedKey key)
+    {
+        if (!DatabaseDescriptor.getPreheatKeyCache())
+            return false;
+        for (SSTableReader sstable : sstables)
+            if (sstable.getCachedPosition(key) != null)
+                return true;
+        return false;
     }
 
     public static long getMaxDataAge(Collection<SSTableReader> sstables)

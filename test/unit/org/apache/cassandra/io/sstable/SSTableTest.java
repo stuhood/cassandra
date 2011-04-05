@@ -51,7 +51,7 @@ public class SSTableTest extends CleanupHelper
     private void verifySingle(SSTableReader sstable, ByteBuffer bytes, ByteBuffer key) throws IOException
     {
         RandomAccessReader file = sstable.openDataReader(false);
-        file.seek(sstable.getPosition(sstable.partitioner.decorateKey(key), SSTableReader.Operator.EQ));
+        file.seek(sstable.getPosition(sstable.partitioner.decorateKey(key), SSTableReader.Operator.EQ).position());
         assert key.equals(ByteBufferUtil.readWithShortLength(file));
         int size = (int)SSTableReader.readRowSize(file, sstable.descriptor);
         byte[] bytes2 = new byte[size];
@@ -90,7 +90,7 @@ public class SSTableTest extends CleanupHelper
         RandomAccessReader file = sstable.openDataReader(false);
         for (ByteBuffer key : keys)
         {
-            file.seek(sstable.getPosition(sstable.partitioner.decorateKey(key), SSTableReader.Operator.EQ));
+            file.seek(sstable.getPosition(sstable.partitioner.decorateKey(key), SSTableReader.Operator.EQ).position());
             assert key.equals( ByteBufferUtil.readWithShortLength(file));
             int size = (int)SSTableReader.readRowSize(file, sstable.descriptor);
             byte[] bytes2 = new byte[size];

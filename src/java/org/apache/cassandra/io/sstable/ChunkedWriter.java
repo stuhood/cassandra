@@ -123,10 +123,7 @@ public class ChunkedWriter extends SSTableWriter
             logger.info("Writing into file " + getFilename());
             throw new IOException("Keys must be written in ascending order.");
         }
-        long position = (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
-        if (rowObserver.shouldAdd(0, false))
-            rowObserver.add(decoratedKey, position);
-        return position;
+        return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
     private void afterAppend(DecoratedKey key, long startPosition) throws IOException
@@ -139,28 +136,45 @@ public class ChunkedWriter extends SSTableWriter
         lastWrittenKey = key;
     }
 
-    public long append(AbstractCompactedRow row) throws IOException
+    public BlockHeader append(AbstractCompactedRow row, boolean computeHeader) throws IOException
     {
-        throw new RuntimeException("FIXME: not implemented"); /*
-        return append(row.key, row.getMetadata(), (Iterator<IColumn>)row, computeHeader);
-        */
+        // max timestamp is not collected here, because we want to avoid deserializing an EchoedRow
+        // instead, it is collected when calling ColumnFamilyStore.createCompactionWriter
+        sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - currentPosition);
+        sstableMetadataCollector.addColumnCount(row.columnCount());
+        return append(row.key, row.getMetadata(), row.iterator(), computeHeader);
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException
     {
+        append(decoratedKey, cf, cf.getSortedColumns().iterator(), false);
+    }
+
+    /**
+     * @param decoratedKey Key to append
+     * @param cf An empty CF representing the metadata for the row
+     * @param iter Iterator over columns in the row
+     * @param computeHeader True to compute and return a row header
+     * @return The offset of the written row
+     */
+    private BlockHeader append(DecoratedKey decoratedKey, ColumnFamily cf, Iterator<IColumn> iter, boolean computeHeader) throws IOException
+    {
         long startPosition = beforeAppend(decoratedKey);
         appender.append(decoratedKey, cf, iter);
 
-        // TODO: needs to be recorded within the appender
-        sstableMetadataCollector.updateMaxTimestamp(cf.maxTimestamp());
-        sstableMetadataCollector.addRowSize(endPosition - startPosition);
-        sstableMetadataCollector.addColumnCount(columnCount);
-
+        BlockHeader header = null;
+        if (computeHeader)
+        {
+            header = new BlockHeader(startPosition);
+        }
         afterAppend(decoratedKey, startPosition);
-        return startPosition;
+        return header;
     }
 
-    @Deprecated
+    /**
+     * Appends data without deserializing, leading to a basic index entry which can't
+     * be used to eliminate the row at query time.
+     */
     public void append(DecoratedKey decoratedKey, ByteBuffer value) throws IOException
     {
         // FIXME: used for BMT: needs to specify version so that we can _possibly_

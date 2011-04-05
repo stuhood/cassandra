@@ -123,7 +123,7 @@ public class RowIndexedWriter extends SSTableWriter
         dbuilder.addPotentialBoundary(dataPosition);
     }
 
-    public long append(AbstractCompactedRow row) throws IOException
+    public BlockHeader append(AbstractCompactedRow row, boolean computeHeader) throws IOException
     {
         long currentPosition = beforeAppend(row.key);
         ByteBufferUtil.writeWithShortLength(row.key.key, dataFile.stream);
@@ -136,7 +136,7 @@ public class RowIndexedWriter extends SSTableWriter
         sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - currentPosition);
         sstableMetadataCollector.addColumnCount(row.columnCount());
         afterAppend(row.key, currentPosition);
-        return currentPosition;
+        return computeHeader ? new BlockHeader(currentPosition) : null;
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf) throws IOException

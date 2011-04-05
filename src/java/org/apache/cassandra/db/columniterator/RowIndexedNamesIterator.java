@@ -36,6 +36,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.IndexHelper;
+import org.apache.cassandra.io.sstable.BlockHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
@@ -58,10 +59,12 @@ public class RowIndexedNamesIterator extends SimpleAbstractColumnIterator implem
         this.columns = columns;
         this.key = key;
 
-        FileDataInput file = sstable.getFileDataInput(key, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
-        if (file == null)
+        BlockHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        if (header == null)
+            // no content for this row
             return;
 
+        FileDataInput file = sstable.getFileDataInput(header, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
         try
         {
             init(sstable, file);
