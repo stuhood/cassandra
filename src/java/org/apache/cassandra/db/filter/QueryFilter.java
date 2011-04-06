@@ -68,26 +68,28 @@ public class QueryFilter
     public IColumnIterator getMemtableColumnIterator(ColumnFamily cf, DecoratedKey key, AbstractType comparator)
     {
         assert cf != null;
-        if (path.superColumnName == null)
-            return filter.getMemtableColumnIterator(cf, key, comparator);
-        return superFilter.getMemtableColumnIterator(cf, key, comparator);
+        return topLevelFilter().getMemtableColumnIterator(cf, key, comparator);
     }
 
-    // TODO move gcBefore into a field
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable)
+    /**
+     * @return An IColumnIterator, or null if there are no columns for the key in the sstable.
+     * If metadata exists for the key, it will be applied to 'out'.
+     */
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, ColumnFamily out)
     {
-        if (path.superColumnName == null)
-            return filter.getSSTableColumnIterator(sstable, key);
-        return superFilter.getSSTableColumnIterator(sstable, key);
+        // if the filter can eliminate this sstable using the index, it'll return null
+        IColumnIterator iter = topLevelFilter().getSSTableColumnIterator(sstable, key, out);
+        if (iter != null)
+            out.delete(iter.getColumnFamily());
+        return iter;
     }
 
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key)
     {
-        if (path.superColumnName == null)
-            return filter.getSSTableColumnIterator(sstable, file, key);
-        return superFilter.getSSTableColumnIterator(sstable, file, key);
+        return topLevelFilter().getSSTableColumnIterator(sstable, file, key);
     }
 
+    // TODO move gcBefore into a field
     public void collectCollatedColumns(final ColumnFamily returnCF, Iterator<IColumn> collatedColumns, final int gcBefore)
     {
         // define a 'reduced' iterator that merges columns w/ the same name, which
@@ -127,7 +129,12 @@ public class QueryFilter
             }
         };
 
-        (superFilter == null ? filter : superFilter).collectReducedColumns(returnCF, reduced, gcBefore);
+        topLevelFilter().collectReducedColumns(returnCF, reduced, gcBefore);
+    }
+
+    private final IFilter topLevelFilter()
+    {
+        return superFilter == null ? filter : superFilter;
     }
 
     public String getColumnFamilyName()

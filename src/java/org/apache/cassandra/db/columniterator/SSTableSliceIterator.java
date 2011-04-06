@@ -30,6 +30,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.io.sstable.RowHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -43,13 +44,10 @@ public class SSTableSliceIterator implements IColumnIterator
     private IColumnIterator reader;
     private DecoratedKey key;
 
-    public SSTableSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public SSTableSliceIterator(SSTableReader sstable, RowHeader header, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.key = key;
-        fileToClose = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
-        if (fileToClose == null)
-            return;
-
+        fileToClose = sstable.getFileDataInput(header, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
         try
         {
             DecoratedKey keyInDisk = SSTableReader.decodeKey(sstable.partitioner,

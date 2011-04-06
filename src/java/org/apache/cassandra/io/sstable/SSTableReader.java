@@ -468,8 +468,6 @@ public abstract class SSTableReader extends SSTable implements Comparable<SSTabl
 
     public FileDataInput getFileDataInput(RowHeader header, int bufferSize)
     {
-        if (header == null)
-            return null;
         return dfile.getSegment(header.position(), bufferSize);
     }
 

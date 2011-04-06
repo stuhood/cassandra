@@ -55,10 +55,12 @@ public interface IFilter
     public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key);
 
     /**
-     * returns an iterator that returns columns from the given SSTable
-     * matching the Filter criteria in sorted order.
+     * @return An iterator that returns columns from the given SSTable matching the
+     * Filter criteria in sorted order, or null if no columns match.
+     * @param out A row may contain metadata without containing columns that interesect
+     * with our query. If the row contained metadata, it will be applied to 'out'
      */
-    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key);
+    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key, ColumnFamily out);
 
     /**
      * collects columns from reducedColumns into returnCF.  Termination is determined
