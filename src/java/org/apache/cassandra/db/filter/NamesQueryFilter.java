@@ -32,6 +32,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.SSTableNamesIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.RowHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.FBUtilities;
@@ -55,9 +56,32 @@ public class NamesQueryFilter implements IFilter
         return Memtable.getNamesIterator(key, cf, this);
     }
 
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key, ColumnFamily out)
     {
-        return new SSTableNamesIterator(sstable, key, columns);
+        RowHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        if (header == null)
+            // no content for row
+            return null;
+        if (header.isMetadataSet())
+        {
+            // apply metadata from the index
+            out.delete(header.localDeletionTime(), header.markedForDeleteAt());
+            // and decide whether we need an iterator
+            if (header.min() == null)
+                // the row is a tombstone, and we've gotten the metadata: finished.
+                return null;
+            if (columns.isEmpty())
+                // but... why?
+                return null;
+            AbstractType c = sstable.getColumnComparator();
+            if (c.compare(columns.last(), header.min()) < 0)
+                // the minimum column in this row is greater than the queries' max
+                return null;
+            if (c.compare(header.max(), columns.first()) < 0)
+                // the maximum column in this row is less than the queries' min
+                return null;
+        }
+        return new SSTableNamesIterator(sstable, header, key, columns);
     }
     
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key)

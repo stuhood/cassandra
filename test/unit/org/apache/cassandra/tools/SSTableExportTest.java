@@ -213,8 +213,7 @@ public class SSTableExportTest extends SchemaLoader
         assertTrue(cf.getColumn(ByteBufferUtil.bytes("name")).value().equals(hexToBytes("76616c")));
 
         qf = QueryFilter.getNamesFilter(Util.dk("rowExclude"), new QueryPath("Standard1", null, null), ByteBufferUtil.bytes("name"));
-        cf = qf.getSSTableColumnIterator(reader, cfamily).getColumnFamily();
-        assert cf == null;
+        assert qf.getSSTableColumnIterator(reader, cfamily) == null;
     }
 
     @Test

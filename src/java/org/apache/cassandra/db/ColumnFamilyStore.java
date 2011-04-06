@@ -1285,10 +1285,10 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
             /* add the SSTables on disk */
             for (SSTableReader sstable : currentView.sstables)
             {
-                iter = filter.getSSTableColumnIterator(sstable);
-                if (iter.getColumnFamily() != null)
+                // metadata is applied to returnCF by the filter
+                iter = filter.getSSTableColumnIterator(sstable, returnCF);
+                if (iter != null)
                 {
-                    returnCF.delete(iter.getColumnFamily());
                     iterators.add(iter);
                     sstablesToIterate++;
                 }

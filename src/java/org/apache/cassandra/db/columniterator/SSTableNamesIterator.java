@@ -36,6 +36,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.IndexHelper;
+import org.apache.cassandra.io.sstable.RowHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
@@ -52,16 +53,13 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
     public final SortedSet<ByteBuffer> columns;
     public final DecoratedKey key;
 
-    public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, SortedSet<ByteBuffer> columns)
+    public SSTableNamesIterator(SSTableReader sstable, RowHeader header, DecoratedKey key, SortedSet<ByteBuffer> columns)
     {
         assert columns != null;
         this.columns = columns;
         this.key = key;
 
-        FileDataInput file = sstable.getFileDataInput(key, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
-        if (file == null)
-            return;
-
+        FileDataInput file = sstable.getFileDataInput(header, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
         try
         {
             DecoratedKey keyInDisk = SSTableReader.decodeKey(sstable.partitioner,

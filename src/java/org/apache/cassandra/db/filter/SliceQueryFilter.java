@@ -36,6 +36,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.SSTableSliceIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.io.sstable.RowHeader;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 
@@ -61,9 +62,30 @@ public class SliceQueryFilter implements IFilter
         return Memtable.getSliceIterator(key, cf, this, comparator);
     }
 
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DecoratedKey key, ColumnFamily out)
     {
-        return new SSTableSliceIterator(sstable, key, start, finish, reversed);
+        RowHeader header = sstable.getPosition(key, SSTableReader.Operator.EQ);
+        if (header == null)
+            // no content for row
+            return null;
+        // FIXME: implement the index-only sstable elimination for reversed slice queries
+        if (header.isMetadataSet() && !reversed)
+        {
+            // apply metadata from the index
+            out.delete(header.localDeletionTime(), header.markedForDeleteAt());
+            // and decide whether we need an iterator
+            if (header.min() == null)
+                // the row is a tombstone, and we've gotten the metadata: finished.
+                return null;
+            AbstractType c = sstable.getColumnComparator();
+            if (finish.remaining() > 0 && c.compare(finish, header.min()) < 0)
+                // the minimum column in this row is greater than the queries' max
+                return null;
+            if (start.remaining() > 0 && c.compare(header.max(), start) < 0)
+                // the maximum column in this row is less than the queries' min
+                return null;
+        }
+        return new SSTableSliceIterator(sstable, header, key, start, finish, reversed);
     }
     
     public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key)
