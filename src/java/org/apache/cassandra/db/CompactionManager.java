@@ -1122,13 +1122,20 @@ public class CompactionManager implements CompactionManagerMBean
 
         public CompactionExecutor()
         {
-            super(Math.max(2, Runtime.getRuntime().availableProcessors()),
+            super(getThreadCount(),
                   60,
                   TimeUnit.SECONDS,
                   new LinkedBlockingQueue<Runnable>(),
                   new NamedThreadFactory("CompactionExecutor", DatabaseDescriptor.getCompactionThreadPriority()));
             Map<CompactionInfo.Holder, Boolean> cmap = new IdentityHashMap<CompactionInfo.Holder, Boolean>();
             compactions = Collections.synchronizedSet(Collections.newSetFromMap(cmap));
+        }
+
+        private static int getThreadCount()
+        {
+            if (!DatabaseDescriptor.getCompactionMultithreading())
+                return 1;
+            return Math.max(2, Runtime.getRuntime().availableProcessors());
         }
 
         void beginCompaction(CompactionInfo.Holder ci)
