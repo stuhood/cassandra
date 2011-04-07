@@ -128,7 +128,7 @@ public class CompactionsPurgeTest extends CleanupHelper
         rm.add(new QueryPath(cfName, null, ByteBufferUtil.bytes(String.valueOf(5))), ByteBufferUtil.EMPTY_BYTE_BUFFER, 2);
         rm.apply();
         cfs.forceBlockingFlush();
-        CompactionManager.instance.doCompaction(cfs, sstablesIncomplete, Integer.MAX_VALUE);
+        CompactionManager.instance.doCompaction(cfs, sstablesIncomplete, false, Integer.MAX_VALUE);
 
         // verify that minor compaction does not GC when key is present
         // in a non-compacted sstable
