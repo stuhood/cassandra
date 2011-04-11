@@ -182,7 +182,7 @@ public class CompactionManager implements CompactionManagerMBean
                             continue;
                         try
                         {
-                            return doCompaction(cfs, tocompact, false, gcBefore);
+                            return doCompaction(cfs, tocompact, gcBefore);
                         }
                         finally
                         {
@@ -346,7 +346,7 @@ public class CompactionManager implements CompactionManagerMBean
                         }
                         try
                         {
-                            doCompaction(cfStore, tocompact, true, gcBefore);
+                            doCompaction(cfStore, tocompact, gcBefore);
                         }
                         catch (IOException e)
                         {
@@ -436,7 +436,7 @@ public class CompactionManager implements CompactionManagerMBean
                         // success: perform the compaction
                         try
                         {
-                            doCompaction(cfs, sstables, false, gcBefore);
+                            doCompaction(cfs, sstables, gcBefore);
                         }
                         finally
                         {
@@ -511,10 +511,8 @@ public class CompactionManager implements CompactionManagerMBean
     /**
      * For internal use and testing only.  The rest of the system should go through the submit* methods,
      * which are properly serialized.
-     * @param forceMajor True if the list of sstables should be consider 'complete', independent of files
-     * that might have been added to the CFStore since calculation.
      */
-    int doCompaction(ColumnFamilyStore cfs, Collection<SSTableReader> sstables, boolean forceMajor, int gcBefore) throws IOException
+    int doCompaction(ColumnFamilyStore cfs, Collection<SSTableReader> sstables, int gcBefore) throws IOException
     {
         // The collection of sstables passed may be empty (but not null); even if
         // it is not empty, it may compact down to nothing if all rows are deleted.
@@ -545,10 +543,9 @@ public class CompactionManager implements CompactionManagerMBean
         }
         sstables = smallerSSTables;
 
-        // new sstables from flush can be added during a compaction, but only the compaction can remove them,
-        // so in our single-threaded compaction world this is a valid way of determining if we're compacting
-        // all the sstables (that existed when we started)
-        boolean major = cfs.isCompleteSSTables(sstables) || forceMajor;
+        // new sstables from flush can be added during a compaction, but if this list is
+        // a complete list at a point in time, then we can call the compaction "major"
+        boolean major = cfs.isCompleteSSTables(sstables);
         String type = major ? "Major" : "Minor";
         logger.info("Compacting {}: {}", type, sstables);
 
