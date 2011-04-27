@@ -125,14 +125,6 @@ public class SSTableWriterCommutativeTest extends CleanupHelper
         SSTableReader cleaned = SSTableUtils.prepare().ks(keyspace).cf(cfname).generation(0).write(cleanedEntries);
 
         // verify
-        BufferedRandomAccessFile origFile    = new BufferedRandomAccessFile(orig.descriptor.filenameFor(SSTable.COMPONENT_DATA), "r", 8 * 1024 * 1024);
-        BufferedRandomAccessFile cleanedFile = new BufferedRandomAccessFile(cleaned.descriptor.filenameFor(SSTable.COMPONENT_DATA), "r", 8 * 1024 * 1024);
-
-        while(origFile.getFilePointer() < origFile.length() && cleanedFile.getFilePointer() < cleanedFile.length())
-        {
-            assert origFile.readByte() == cleanedFile.readByte();
-        }
-        assert origFile.getFilePointer() == origFile.length();
-        assert cleanedFile.getFilePointer() == cleanedFile.length();
+        SSTableUtils.assertContentEquals(rebuilt, cleaned);
     }
 }
