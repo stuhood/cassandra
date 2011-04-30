@@ -23,9 +23,6 @@ package org.apache.cassandra.db.filter;
 import java.util.Comparator;
 import java.util.Iterator;
 
-import org.apache.avro.file.DataFileReader;
-import org.apache.cassandra.io.sstable.avro.Chunk;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
@@ -55,14 +52,6 @@ public interface IFilter
      * @param file Already opened file data input, saves us opening another one
      */
     public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file);
-
-    /**
-     * Get an iterator that returns columns from the given SSTable using the opened file
-     * matching the Filter criteria in sorted order.
-     * @param sstable
-     * @param reader Already opened reader
-     */
-    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DataFileReader<Chunk> reader);
 
     /**
      * returns an iterator that returns columns from the given SSTable

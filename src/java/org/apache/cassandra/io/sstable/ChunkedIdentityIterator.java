@@ -27,26 +27,21 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 
-import org.apache.avro.file.DataFileReader;
-import org.apache.avro.specific.SpecificDatumReader;
-
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.ChunkedSliceIterator;
-import org.apache.cassandra.io.sstable.avro.*;
+import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.io.sstable.Chunk;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 
 class ChunkedIdentityIterator extends SSTableIdentityIterator
 {
-    private static final SpecificDatumReader<Chunk> dreader = new SpecificDatumReader<Chunk>();
-
-    public final SSTableReader sstable;
     private DecoratedKey key;
     private ColumnFamily cf;
 
-    protected final DataFileReader<Chunk> reader;
-    protected final boolean isSuper;
+    protected final BufferedRandomAccessFile file;
 
     private final long startPosition;
     // not valid until closed
@@ -54,32 +49,25 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
     private int columnCount = -1;
 
     // the current chunks, flag for column consumption
-    private final Chunks.Cursor cursor;
+    private final Cursor cursor;
     private boolean available;
 
     /**
      * Used to iterate through all columns in a row.
      */
-    ChunkedIdentityIterator(SSTableReader sstable, DataFileReader<Chunk> reader, boolean fromRemote)
+    ChunkedIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, BufferedRandomAccessFile file, boolean fromRemote) throws IOException
     {
-        super(sstable.metadata, sstable.partitioner, sstable.descriptor, fromRemote);
-        this.sstable = sstable;
-        this.reader = reader;
-        this.startPosition = reader.tell();
-        this.isSuper = sstable.metadata.cfType == ColumnFamilyType.Super;
-        this.cursor = new Chunks.Cursor(isSuper);
+        super(cfm, partitioner, desc, fromRemote);
+        this.file = file;
+        this.startPosition = file.getFilePointer();
+        this.cursor = new Cursor(desc, cfm.getTypes(), fromRemote);
         this.available = false;
         this.readSpan(); // eagerly open
     }
 
-    public SSTableReader getSSTable()
-    {
-        return sstable;
-    }
-
     public String getPath()
     {
-        return sstable.descriptor.filenameFor(Component.DATA);
+        return desc.filenameFor(Component.DATA);
     }
 
     public DecoratedKey getKey()
@@ -99,35 +87,23 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
     }
 
     /** @return True if we opened the next valid span for this iterator. */
-    private boolean readSpan()
+    private boolean readSpan() throws IOException
     {
         if (!cursor.hasMoreSpans())
             return false;
-        cursor.reset();
+        // read all chunks for the span
+        cursor.nextSpan(file);
 
-        // the key chunk
-        cursor.chunks[0] = reader.next();
-        assert cursor.chunks[0].chunk == 0;
+        // validate our position
         if (key == null)
-            key = sstable.partitioner.decorateKey(cursor.chunks[0].values.get(0));
+            key = partitioner.decorateKey(cursor.getVal(cursor.keyDepth()));
         else
-            assert cursor.chunks[0].values.get(0).equals(key.key) : "Positioned at the wrong row!";
-        // the column name chunk
-        cursor.chunks[1] = reader.next();
+            assert cursor.getVal(cursor.keyDepth()).equals(key.key) : "Positioned at the wrong row!";
+        // read range metadata to reconstruct column family
         if (cf == null)
         {
-            // read range metadata to reconstruct column family
-            cf = ColumnFamily.create(sstable.metadata);
-            Chunks.applyMetadata(cursor.chunks[1], cf, 0); // one key per span
-        }
-
-        // TODO: read the remaining chunks lazily only if we match a name
-        cursor.chunks[2] = reader.next();
-        if (isSuper)
-        {
-            cursor.chunks[3] = reader.next();
-            // find the first child of the current supercolumn
-            cursor.seekToFirstChild(1);
+            cf = ColumnFamily.create(cfm);
+            cursor.applyMetadata(1, cf); // only one key per span
         }
         return true;
     }
@@ -140,13 +116,20 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
         while(true)
         {
             // is the current column valid?
-            if (!cursor.isConsumed(1, cursor.chunks[1].values.size()))
+            if (!cursor.isConsumed(1, null))
                 // nothing else to do
                 break;
-            // see if there is a valid span
-            if (!readSpan())
-                // the row is consumed
-                return false;
+            try
+            {
+                // see if there is a valid span
+                if (!readSpan())
+                    // the row is consumed
+                    return false;
+            }
+            catch (IOException e)
+            {
+                throw new IOError(e);
+            }
         }
         available = true;
         return true;
@@ -157,8 +140,7 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
         if (!hasNext())
             throw new java.util.NoSuchElementException();
         available = false;
-        
-        return Chunks.getColumn(cursor, sstable.metadata);
+        return cursor.getColumn();
     }
 
     public void remove()
@@ -172,18 +154,10 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
         assert key != null : "Closing a row that isn't open?";
         while (cursor.hasMoreSpans())
         {
-            cursor.reset();
-            // assuming that we've already read all chunks in the current span,
-            // peek at the first 2 chunks in the next span
-            cursor.chunks[0] = reader.next();
-            assert cursor.chunks[0].values.get(0).equals(key.key) : "Positioned at the wrong row!";
-            // the column name chunk
-            cursor.chunks[1] = reader.next();
-
-            // skip the remainder of the span
-            reader.nextBlock();
-            if (isSuper)
-                reader.nextBlock();
+            cursor.nextSpan(file);
+            // confirm that we are still consuming the correct row
+            assert cursor.getVal(cursor.keyDepth()).equals(key.key) :
+                "Positioned at the wrong row!";
         }
         finishPosition = file.getFilePointer();
         // TODO: would need to force decompression to get accurate count

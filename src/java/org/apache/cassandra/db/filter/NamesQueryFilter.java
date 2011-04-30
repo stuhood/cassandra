@@ -26,7 +26,6 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.SortedSet;
 
-import org.apache.avro.file.DataFileReader;
 import org.apache.commons.lang.StringUtils;
 
 import org.apache.cassandra.db.*;
@@ -34,7 +33,6 @@ import org.apache.cassandra.db.columniterator.IColumnIterator;
 import org.apache.cassandra.db.columniterator.ChunkedNamesIterator;
 import org.apache.cassandra.db.columniterator.RowIndexedNamesIterator;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.io.sstable.avro.Chunk;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.FBUtilities;
@@ -69,14 +67,7 @@ public class NamesQueryFilter implements IFilter
     {
         if (sstable.descriptor.isRowIndexed)
             return new RowIndexedNamesIterator(sstable, file, columns);
-        // TODO
-        throw new RuntimeException("Not implemented!");
-    }
-
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, DataFileReader<Chunk> reader)
-    {
-        assert !sstable.descriptor.isRowIndexed;
-        return new ChunkedNamesIterator(sstable, reader, columns);
+        return new ChunkedNamesIterator(sstable, file, columns);
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

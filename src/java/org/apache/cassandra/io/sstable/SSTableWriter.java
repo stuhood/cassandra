@@ -35,10 +35,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.avro.file.CodecFactory;
-import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.specific.SpecificDatumWriter;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
@@ -49,7 +45,6 @@ import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SegmentedFile;
-import org.apache.cassandra.io.sstable.avro.*;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -59,11 +54,10 @@ public class SSTableWriter extends SSTable implements Closeable
 
     private IndexWriter iwriter;
     private SegmentedFile.Builder dbuilder;
-    private DataFileWriter<Chunk> dataFile;
+    private BufferedRandomAccessFile dataFile;
     private ChunkAppender appender;
     private DecoratedKey lastWrittenKey;
-
-    private long mark = -1;
+    private FileMark dataMark;
 
     public SSTableWriter(String filename, long keyCount) throws IOException
     {
@@ -79,37 +73,38 @@ public class SSTableWriter extends SSTable implements Closeable
               partitioner);
         iwriter = new IndexWriter(descriptor, partitioner, replayPosition, keyCount);
         dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
-        dataFile = new DataFileWriter<Chunk>(new SpecificDatumWriter<Chunk>());
-        dataFile.create(Chunk.SCHEMA$, new File(getFilename()));
+        dataFile = new BufferedRandomAccessFile(new File(getFilename()), "rw", BufferedRandomAccessFile.DEFAULT_BUFFER_SIZE, true);
         createAppender();
     }
 
     private void createAppender()
     {
-        appender = new ChunkAppender(dataFile,
-                                     metadata.cfType == ColumnFamilyType.Standard ? 3 : 4,
+        appender = new ChunkAppender(descriptor,
+                                     metadata.getTypes(),
+                                     dataFile,
                                      metadata.getBlockSizeInKB());
     }
 
     public void mark() throws IOException
     {
         assert appender.isFlushed() : "Cannot mark mid-row: call reset first";
-        mark = dataFile.sync();
+        dataMark = dataFile.mark();
         iwriter.mark();
     }
 
-    /** NB: This reopens the file at the mark, and should not be used lightly. */
     public void reset() throws IOException
     {
-        assert mark != -1 : "Cannot reset without marking";
-        // truncate and reopen
-        dataFile.close();
-        FileUtils.truncate(getFilename(), mark);
-        dataFile = new DataFileWriter(new SpecificDatumWriter<Chunk>());
-        dataFile = dataFile.appendTo(new File(getFilename()));
-        // recreate the appender
-        createAppender();
-        iwriter.reset();
+        try
+        {
+            dataFile.reset(dataMark);
+            iwriter.reset();
+            // recreate the appender
+            createAppender();
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
     }
 
     private long beforeAppend(DecoratedKey decoratedKey) throws IOException
@@ -125,7 +120,7 @@ public class SSTableWriter extends SSTable implements Closeable
             logger.info("Writing into file " + getFilename());
             throw new IOException("Keys must be written in ascending order.");
         }
-        return dataFile.sync();
+        return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
     private void afterAppend(DecoratedKey decoratedKey, long dataPosition, long dataSize, long columnCount) throws IOException
@@ -158,7 +153,7 @@ public class SSTableWriter extends SSTable implements Closeable
     {
         long startPosition = beforeAppend(decoratedKey);
         int columnCount = appender.append(decoratedKey, cf, iter);
-        afterAppend(decoratedKey, startPosition, dataFile.sync() - startPosition, columnCount);
+        afterAppend(decoratedKey, startPosition, dataFile.getFilePointer() - startPosition, columnCount);
         return startPosition;
     }
 
@@ -187,7 +182,9 @@ public class SSTableWriter extends SSTable implements Closeable
 
         // main data
         appender.flush();
-        dataFile.close();
+        long position = dataFile.getFilePointer();
+        dataFile.close(); // calls force
+        FileUtils.truncate(dataFile.getPath(), position);
 
         // remove the 'tmp' marker from all components
         final Descriptor newdesc = rename(descriptor, components);
@@ -220,7 +217,6 @@ public class SSTableWriter extends SSTable implements Closeable
 
     public long getFilePointer()
     {
-        throw new RuntimeException("FIXME: not implemented");
-        // return dataFile.getFilePointer();
+        return dataFile.getFilePointer();
     }
 }

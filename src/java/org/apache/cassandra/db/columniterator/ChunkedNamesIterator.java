@@ -28,13 +28,10 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.avro.file.DataFileReader;
-import org.apache.avro.specific.SpecificDatumReader;
-
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.io.sstable.avro.*;
-import org.apache.cassandra.io.sstable.Chunks;
+import org.apache.cassandra.io.sstable.Chunk;
+import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileUtils;
@@ -44,8 +41,6 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
 {
     private static Logger logger = LoggerFactory.getLogger(ChunkedNamesIterator.class);
 
-    private static final SpecificDatumReader<Chunk> dreader = new SpecificDatumReader<Chunk>();
-
     private DecoratedKey key;
     private ColumnFamily cf;
     private Iterator<IColumn> iter;
@@ -53,7 +48,7 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
     public final SortedSet<ByteBuffer> columns;
     public final SSTableReader sstable;
     public final boolean isSuper;
-    public final Chunks.Cursor cursor;
+    public final Cursor cursor;
 
     public ChunkedNamesIterator(SSTableReader sstable, DecoratedKey key, SortedSet<ByteBuffer> columns)
     {
@@ -62,20 +57,14 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
         this.columns = columns;
         this.sstable = sstable;
         this.key = key;
-        this.cursor = new Chunks.Cursor(isSuper);
+        this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
 
         FileDataInput file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getIndexedReadBufferSizeInKB() * 1024);
         if (file == null)
             return;
         try
         {
-            // TODO: avro needs to peek at the header to initialize: this _should_
-            // always be cached, but...
-            long keyOffset = file.tell();
-            file.seek(0);
-            DataFileReader<Chunk> reader = new DataFileReader<Chunk>(file, dreader);
-            reader.seek(keyOffset);
-            read(reader);
+            read(file);
         }
         catch (IOException ioe)
         {
@@ -87,17 +76,17 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
         }
     }
 
-    public ChunkedNamesIterator(SSTableReader sstable, DataFileReader<Chunk> reader, SortedSet<ByteBuffer> columns)
+    public ChunkedNamesIterator(SSTableReader sstable, FileDataInput file, SortedSet<ByteBuffer> columns)
     {
         assert columns != null;
         this.isSuper = sstable.metadata.cfType == ColumnFamilyType.Super;
         this.columns = columns;
         this.sstable = sstable;
-        this.cursor = new Chunks.Cursor(isSuper);
+        this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
 
         try
         {
-            read(reader);
+            read(file);
         }
         catch (IOException e)
         {
@@ -106,52 +95,40 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
     }
 
     /** @return True if we opened the next valid span for this iterator. */
-    private boolean readSpan(DataFileReader<Chunk> reader)
+    private boolean readSpan(FileDataInput file) throws IOException
     {
         if (!cursor.hasMoreSpans())
             return false;
-        cursor.reset();
+        // read all chunks for the span
+        cursor.nextSpan(file);
 
-        // the key chunk
-        cursor.chunks[0] = reader.next();
-        assert cursor.chunks[0].chunk == 0;
+        // validate our position
         if (key == null)
-            key = sstable.partitioner.decorateKey(cursor.chunks[0].values.get(0));
+            key = sstable.partitioner.decorateKey(cursor.getVal(cursor.keyDepth()));
         else
-            assert cursor.chunks[0].values.get(0).equals(key.key) : "Positioned at the wrong row!";
-        // the column name chunk
-        cursor.chunks[1] = reader.next();
+            assert cursor.getVal(cursor.keyDepth()).equals(key.key) : "Positioned at the wrong row!";
+        // read range metadata to reconstruct column family
         if (cf == null)
         {
-            // read range metadata to reconstruct column family
             cf = ColumnFamily.create(sstable.metadata);
-            Chunks.applyMetadata(cursor.chunks[1], cf, 0); // one key per span
+            cursor.applyMetadata(1, cf); // only one key per span at the moment
         }
-
-        // TODO: read the remaining chunks lazily only if we match a name
-        cursor.chunks[2] = reader.next();
-        if (isSuper)
-            cursor.chunks[3] = reader.next();
         return true;
     }
 
-    private void read(DataFileReader<Chunk> reader) throws IOException
+    private void read(FileDataInput file) throws IOException
     {
         // match columns
         List<IColumn> matched = new ArrayList<IColumn>(columns.size());
         // TODO: wasteful: searching for every column in every span
-        while (readSpan(reader))
+        while (readSpan(file))
         {
             for (ByteBuffer column : columns)
             {
-                cursor.indexes[1] = Collections.binarySearch(cursor.chunks[1].values, column, sstable.metadata.comparator);
-                if (cursor.indexes[1] < 0)
+                if (cursor.searchAt(1, column) != 0)
                     // not found
                     continue;
-                if (isSuper)
-                    // find the first child of the matched column
-                    cursor.seekToFirstChild(1);
-                matched.add(Chunks.getColumn(cursor, sstable.metadata));
+                matched.add(cursor.getColumn());
             }
         }
         iter = matched.iterator();

@@ -25,14 +25,11 @@ import java.io.IOError;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-import org.apache.avro.file.DataFileReader;
-import org.apache.avro.specific.SpecificDatumReader;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.io.sstable.avro.*;
-import org.apache.cassandra.io.sstable.Chunks;
+import org.apache.cassandra.io.sstable.Chunk;
+import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.FBUtilities;
@@ -42,8 +39,6 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public class ChunkedSliceIterator implements IColumnIterator
 {
-    private static final SpecificDatumReader<Chunk> dreader = new SpecificDatumReader<Chunk>();
-
     private final SSTableReader sstable;
     private final ByteBuffer startColumn;
     private final ByteBuffer finishColumn;
@@ -51,30 +46,18 @@ public class ChunkedSliceIterator implements IColumnIterator
     private DecoratedKey key;
     private ColumnFamily cf;
 
+    private final FileDataInput file;
     private boolean shouldClose;
-    private DataFileReader<Chunk> reader;
     protected final boolean isSuper;
 
     // the current chunks, flag for column consumption
-    private final Chunks.Cursor cursor;
+    private final Cursor cursor;
     private boolean available;
-    // and the right bound of valid columns in the chunk
-    private int right;
-
-    public ChunkedSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
-    {
-        this(sstable, null, key, startColumn, finishColumn, reversed);
-    }
-
-    public ChunkedSliceIterator(SSTableReader sstable, DataFileReader<Chunk> reader, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
-    {
-        this(sstable, reader, null, startColumn, finishColumn, reversed);
-    }
 
     /**
      * An eagerly loaded iterator for a slice within an SSTable.
      * @param metadata Metadata for the CFS we are reading from
-     * @param reader Optional parameter that input is read from.  If null is passed, this class creates an appropriate one automatically.
+     * @param file Optional parameter that input is read from.  If null is passed, this class creates an appropriate one automatically.
      * If this class creates, it will close the underlying file when #close() is called.
      * If a caller passes a non-null argument, this class will NOT close the underlying file when the iterator is closed (i.e. the caller is responsible for closing the file)
      * In all cases the caller should explicitly #close() this iterator.
@@ -83,7 +66,7 @@ public class ChunkedSliceIterator implements IColumnIterator
      * @param finishColumn The end of the slice
      * @param reversed Results are returned in reverse order iff reversed is true.
      */
-    public ChunkedSliceIterator(SSTableReader sstable, DataFileReader<Chunk> reader, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public ChunkedSliceIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.sstable = sstable;
         this.isSuper = sstable.metadata.cfType == ColumnFamilyType.Super;
@@ -91,34 +74,22 @@ public class ChunkedSliceIterator implements IColumnIterator
         this.startColumn = startColumn;
         this.finishColumn = finishColumn;
         this.available = false;
-        this.cursor = new Chunks.Cursor(isSuper);
+        this.cursor = new Cursor(sstable.descriptor, sstable.metadata.getTypes());
         assert !reversed : "TODO: Support reversed slices";
 
-        if (reader != null)
+        if (file != null)
         {
             shouldClose = false;
-            this.reader = reader;
-            this.readSpan(); // eagerly load the chunk/key/cf
-            return;
+            this.file = file;
         }
-        shouldClose = true;
-        FileDataInput file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
-        if (file == null)
-            return;
-        try
+        else
         {
-            // FIXME: avro needs to peek at the header to initialize: this _should_
-            // always be cached, but...
-            long keyOffset = file.tell();
-            file.seek(0);
-            this.reader = new DataFileReader<Chunk>(file, dreader);
-            this.reader.seek(keyOffset);
-            this.readSpan(); // eagerly load the chunk/key/cf
+            shouldClose = true;
+            this.file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
+            if (this.file == null)
+                return;
         }
-        catch (IOException e)
-        {
-            throw new IOError(e);
-        }
+        this.readSpan(); // eagerly load the chunk/key/cf
     }
 
     public DecoratedKey getKey()
@@ -136,54 +107,32 @@ public class ChunkedSliceIterator implements IColumnIterator
     {
         if (!cursor.hasMoreSpans())
             return false;
-        cursor.reset();
+        try
+        {
+            // read all chunks for the span
+            cursor.nextSpan(file);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
 
-        // the key chunk
-        cursor.chunks[0] = reader.next();
-        assert cursor.chunks[0].chunk == 0;
+        // validate our position
         if (key == null)
-            key = sstable.partitioner.decorateKey(cursor.chunks[0].values.get(0));
+            key = sstable.partitioner.decorateKey(cursor.getVal(cursor.keyDepth()));
         else
-            assert cursor.chunks[0].values.get(0).equals(key.key) : "Positioned at the wrong row!";
-        // the column name chunk
-        cursor.chunks[1] = reader.next();
+            assert cursor.getVal(cursor.keyDepth()).equals(key.key) : "Positioned at the wrong row!";
+        // read range metadata to reconstruct column family
         if (cf == null)
         {
-            // read range metadata to reconstruct column family
             cf = ColumnFamily.create(sstable.metadata);
-            Chunks.applyMetadata(cursor.chunks[1], cf, 0); // one key per span
+            cursor.applyMetadata(1, cf); // only one key per span
         }
 
-        // determine the left bound in the span using the name chunk
-        cursor.searchAt(1, startColumn, sstable.metadata.comparator);
-
-        // ...and the right bound
-        if (cursor.indexes[1] >= cursor.chunks[1].values.size())
-            // no matches in this chunk
-            right = -1;
-        else if (finishColumn.remaining() == 0)
-            // unbounded to the right
-            right = cursor.chunks[1].values.size();
-        else
-        {
-            // search for right bound
-            // TODO: bound binsearch by the left index
-            right = cursor.binSearch(1, finishColumn, sstable.metadata.comparator);
-            // right == 1 + last_interesting_name
-            if (right < 0)
-                right = -right - 1; // name at insertion position
-            else
-                right++;
-        }
-
-        // TODO: read the remaining chunks lazily only if we match a name
-        cursor.chunks[2] = reader.next();
-        if (isSuper)
-        {
-            cursor.chunks[3] = reader.next();
-            // find the first child of the current supercolumn
-            cursor.seekToFirstChild(1);
-        }
+        // find the window of interesting columns in this span
+        if (cursor.searchAt(1, startColumn) < 0)
+            // nothing gte in the span means nothing in further spans either
+            return false;
         return true;
     }
 
@@ -195,8 +144,7 @@ public class ChunkedSliceIterator implements IColumnIterator
         while(true)
         {
             // is the current column valid?
-            if (!cursor.isConsumed(1, right))
-                // nothing else to do
+            if (!cursor.isConsumed(1, finishColumn.remaining() == 0 ? null : finishColumn))
                 break;
             // see if there is a valid span
             if (!readSpan())
@@ -213,7 +161,7 @@ public class ChunkedSliceIterator implements IColumnIterator
             throw new java.util.NoSuchElementException();
         available = false;
 
-        return Chunks.getColumn(cursor, sstable.metadata);
+        return cursor.getColumn();
     }
 
     public void remove()
@@ -225,7 +173,7 @@ public class ChunkedSliceIterator implements IColumnIterator
     {
         if (shouldClose)
         {
-            reader.close();
+            file.close();
             return;
         }
         // else
@@ -233,18 +181,10 @@ public class ChunkedSliceIterator implements IColumnIterator
         assert key != null : "Closing a row that isn't open?";
         while (cursor.hasMoreSpans())
         {
-            cursor.reset();
-            // assuming that we've already read all chunks in the current span,
-            // peek at the first 2 chunks in the next span
-            cursor.chunks[0] = reader.next();
-            assert cursor.chunks[0].values.get(0).equals(key.key) : "Positioned at the wrong row!";
-            // the column name chunk
-            cursor.chunks[1] = reader.next();
-
-            // skip the remainder of the span
-            reader.nextBlock();
-            if (isSuper)
-                reader.nextBlock();
+            cursor.nextSpan(file);
+            // confirm that we are still consuming the correct row
+            assert cursor.getVal(cursor.keyDepth()).equals(key.key) :
+                "Positioned at the wrong row!";
         }
     }
 }

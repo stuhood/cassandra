@@ -81,16 +81,14 @@ public class BoundedBitSet extends OpenBitSet
     /** Set the bit at the current index, and increment the index. */
     public BoundedBitSet set()
     {
-        this.set(index);
-        index++;
+        this.set(index++);
         return this;
     }
 
     /** Unset the bit at the current index, and Increment the index. */
     public BoundedBitSet unset()
     {
-        this.clear(index);
-        index++;
+        this.clear(index++);
         return this;
     }
 
@@ -104,7 +102,7 @@ public class BoundedBitSet extends OpenBitSet
     public LongType.LongCollection asLongCollection()
     {
         // the number of longs that are active in the bitset, plus the index
-        final int numWords = OpenBitSet.bits2words(index);
+        final int numWords = Math.min(bits.length, OpenBitSet.bits2words(index));
         return new LongType.LongCollection(numWords + 1)
         {
             public long get(int i)

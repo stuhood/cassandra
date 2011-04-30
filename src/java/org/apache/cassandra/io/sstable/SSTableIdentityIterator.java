@@ -46,7 +46,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
     // Used by lazilyCompactedRow, so that we see the same things when deserializing the first and second time
     protected final int expireBefore;
 
-    SSTableIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, boolean fromRemote)
+    protected SSTableIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, boolean fromRemote)
     {
         this.cfm = cfm;
         this.partitioner = partitioner;
@@ -57,8 +57,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
 
     /**
      * Construct an SSTableIdentityIterator for an sstable data file which has arrived
-     * from a remote node, and which might be missing components. This implementation
-     * also forces deserialization of the data to check for corruption.
+     * from a remote node, and which might be missing components.
      */
     public static SSTableIdentityIterator create(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, BufferedRandomAccessFile file, boolean deserializeRowHeader) throws IOException
     {

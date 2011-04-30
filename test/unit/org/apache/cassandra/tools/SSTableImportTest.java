@@ -69,7 +69,7 @@ public class SSTableImportTest extends SchemaLoader
         IColumn expCol = cf.getColumn(ByteBufferUtil.bytes("colAC"));
         assert expCol.value().equals(hexToBytes("76616c4143"));
         assert expCol instanceof ExpiringColumn;
-        assert ((ExpiringColumn)expCol).getTimeToLive() == 42 && expCol.getLocalDeletionTime() == 2000000000;
+        assert expCol.getLocalDeletionTime() == 2000000000;
     }
 
     @Test
@@ -91,7 +91,7 @@ public class SSTableImportTest extends SchemaLoader
         IColumn expCol = cf.getColumn(ByteBufferUtil.bytes("colAC"));
         assert expCol.value().equals(hexToBytes("76616c4143"));
         assert expCol instanceof ExpiringColumn;
-        assert ((ExpiringColumn)expCol).getTimeToLive() == 42 && expCol.getLocalDeletionTime() == 2000000000;
+        assert expCol.getLocalDeletionTime() == 2000000000;
     }
 
     @Test

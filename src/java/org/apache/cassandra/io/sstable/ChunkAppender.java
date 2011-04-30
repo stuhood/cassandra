@@ -22,9 +22,7 @@
 package org.apache.cassandra.io.sstable;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.nio.ByteBuffer;
 
 import com.google.common.base.Predicates;
@@ -34,72 +32,56 @@ import com.google.common.collect.Iterators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.generic.GenericArray;
-import org.apache.avro.Schema;
-
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.io.SerDeUtils;
-import org.apache.cassandra.io.sstable.avro.*;
-import static org.apache.cassandra.utils.ByteBufferUtil.EMPTY_BYTE_BUFFER;
+import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 
 /**
  * Tracks the state and thresholds necessary to Chunk an iterator nested at depth N
  * into a Span of N levels/chunks.
- *
- * We force a 'sync' of the underlying file after every appended object, meaning
- * that they are compressed individually, and must consequently be reasonably
- * large to make the compression worthwhile.
  */
 class ChunkAppender
 {
     private static Logger logger = LoggerFactory.getLogger(SSTableWriter.class);
 
-    private static final Schema BYTE_BUFFER_SCHEMA = Schema.createArray(Schema.parse("{\"type\": \"bytes\"}"));
-
-    private final DataFileWriter<Chunk> dataFile;
-    // arrays of length "chunksPerSpan" containing the current chunk, parent flag,
-    // and whether a metadata range is open at each level
+    private final BufferedRandomAccessFile dataFile;
+    private final List<AbstractType> types;
+    // the current chunk for each level
     private final Chunk[] chunks;
-    private final boolean[] parents;
-    private final boolean[] isOpen;
-    private long spanBytes;
+    // the currently open range type, and the metadata timestamps to go with it
+    private final byte[] openType;
+    private final long[] openClient;
+    private final int[] openLocal;
 
-    // target size of a span, in bytes
+    // current and target size of a span, in bytes
+    private long spanBytes;
     private final long targetSpanBytes;
 
-    public ChunkAppender(DataFileWriter<Chunk> dataFile, int chunksPerSpan, int targetSpanSizeInKB)
+    public ChunkAppender(Descriptor desc, List<AbstractType> types, BufferedRandomAccessFile dataFile, int targetSpanSizeInKB)
     {
         this.targetSpanBytes = targetSpanSizeInKB * 1024;
         this.dataFile = dataFile;
-        this.chunks = new Chunk[chunksPerSpan];
-        this.parents = new boolean[chunksPerSpan];
-        this.isOpen = new boolean[chunksPerSpan];
-        for (int i = 0; i < chunksPerSpan; i++)
-        {
-            Chunk chunk = new Chunk();
-            chunk.values = SerDeUtils.<ByteBuffer>createArray(256, BYTE_BUFFER_SCHEMA);
-            chunk.ranges = SerDeUtils.<ByteBuffer>createArray(256, BYTE_BUFFER_SCHEMA);
-            chunk.value_metadata = SerDeUtils.<ChunkFieldMetadata>createArray(256, ChunkFieldMetadata.SCHEMA$);
-            chunk.range_metadata = SerDeUtils.<ChunkFieldMetadata>createArray(256, ChunkFieldMetadata.SCHEMA$);
-            chunk.chunk = i;
-            chunks[i] = chunk;
-            parents[i] = false;
-            isOpen[i] = false;
-        }
+        this.types = types;
+        this.chunks = new Chunk[types.size()];
+        this.openType = new byte[types.size()];
+        this.openClient = new long[types.size()];
+        this.openLocal = new int[types.size()];
+        for (int i = 0; i < types.size(); i++)
+            chunks[i] = new Chunk(desc, types.get(i));
     }
 
     public int append(DecoratedKey decoratedKey, ColumnFamily cf, Iterator<IColumn> iter) throws IOException
     {
         /** key chunk */
-        ChunkFieldMetadata km = new ChunkFieldMetadata();
-        km.type = ChunkFieldType.STANDARD;
-        add(0, decoratedKey.key, km);
-
+        // open a metadata range for the key's "parent": the parent of a key is the
+        // column family: if we wanted to support range deletes for keys, they would
+        // be stored at this level
+        openRangeMetadata(0, null, Long.MIN_VALUE, Integer.MIN_VALUE);
+        add(0, decoratedKey.key, Chunk.ENTRY_PARENT);
         /** child chunks */
-        // add child chunks recursively
         int columnCount = addTo(1, cf, iter);
+        // close metadata at the key level
+        closeRangeMetadata(0, null);
 
         // force append to finish the row
         // TODO: removing this force would mean we would start storing more than one row per span
@@ -107,35 +89,17 @@ class ChunkAppender
         return columnCount;
     }
 
-    /** Flip the parent flag for the given depth, and return it. */
-    private boolean parentFlipAndGet(int depth)
-    {
-        return parents[depth] = !parents[depth];
-    }
-
     /** Recursively encode IColumn instances, flushing them to disk when thresholds are reached. */
     private int addTo(int depth, IColumnContainer container, Iterator<IColumn> iter) throws IOException
     {
-        // the parent for this level has changed to 'container': toggle parent flag
-        boolean parentFlag = parentFlipAndGet(depth);
         int columnCount = 0;
         // open the metadata range at this level
-        openRangeMetadata(depth, EMPTY_BYTE_BUFFER, container, parentFlag);
+        openRangeMetadata(depth, null, container);
         if (!iter.hasNext())
         {
-            // this parent has no children: must contain a null child entry at every level
-            ChunkFieldMetadata nm = new ChunkFieldMetadata();
-            nm.parent = parentFlag;
-            nm.type = ChunkFieldType.NULL;
-            add(depth, EMPTY_BYTE_BUFFER, nm);
-            // TODO: we shouldn't store a value for nulls: doing it for convenience
+            // this parent contains only metadata: child levels need a NULL placeholder
             for (int i = depth + 1; i < chunks.length; i++)
-            {
-                ChunkFieldMetadata cm = new ChunkFieldMetadata();
-                cm.parent = parentFlipAndGet(i);
-                cm.type = ChunkFieldType.NULL;
-                add(i, EMPTY_BYTE_BUFFER, cm);
-            }
+                add(i, null, Chunk.ENTRY_NULL);
         }
         while (iter.hasNext())
         {
@@ -143,51 +107,43 @@ class ChunkAppender
             maybeAppendAndReset();
 
             IColumn icol = iter.next();
-            /** name level */
-            ChunkFieldMetadata nm = new ChunkFieldMetadata();
-            nm.parent = parentFlag;
-            nm.type = ChunkFieldType.STANDARD;
-            add(depth, icol.name(), nm);
-
-            /** value level */
             // supercolumn value: recurse
             if (icol.getClass() == SuperColumn.class)
             {
+                add(depth, icol.name(), Chunk.ENTRY_PARENT);
                 // recurse
                 SuperColumn scol = (SuperColumn)icol;
                 addTo(depth + 1, scol, scol.getSortedColumns().iterator());
                 continue;
             }
             // standard value
-            ChunkFieldMetadata cm = new ChunkFieldMetadata();
-            cm.timestamp = icol.timestamp();
-            cm.parent = parentFlipAndGet(depth + 1);
+            add(depth, icol.name(), Chunk.ENTRY_NAME);
+            byte cm;
+            chunks[depth + 1].clientTimestampAdd(icol.timestamp());
             ByteBuffer value;
             if (icol.getClass() == Column.class)
             {
-                cm.type = ChunkFieldType.STANDARD;
+                cm = Chunk.ENTRY_STANDARD;
                 value = icol.value();
             }
             else if (icol.getClass() == DeletedColumn.class)
             {
-                cm.type = ChunkFieldType.DELETED;
-                cm.localDeletionTime = icol.getLocalDeletionTime();
-                // TODO: shouldn't store value for nulls
-                value = EMPTY_BYTE_BUFFER;
+                cm = Chunk.ENTRY_DELETED;
+                chunks[depth + 1].localTimestampAdd(icol.getLocalDeletionTime());
+                value = null;
             }
             else if (icol.getClass() == ExpiringColumn.class)
             {
-                ExpiringColumn col = (ExpiringColumn)icol;
-                cm.type = ChunkFieldType.EXPIRING;
-                cm.timeToLive = col.getTimeToLive();
-                cm.localDeletionTime = col.getLocalDeletionTime();
+                cm = Chunk.ENTRY_EXPIRING;
+                // we don't record the TTL for expiring columns: see CASSANDRA-2620
+                chunks[depth + 1].localTimestampAdd(icol.getLocalDeletionTime());
                 value = icol.value();
             }
             else if (icol.getClass() == CounterColumn.class)
             {
+                cm = Chunk.ENTRY_COUNTER;
                 CounterColumn col = (CounterColumn)icol;
-                cm.type = ChunkFieldType.COUNTER;
-                cm.timestampOfLastDelete = col.timestampOfLastDelete();
+                chunks[depth + 1].clientTimestampAdd(col.timestampOfLastDelete());
                 value = icol.value();
             }
             else
@@ -196,58 +152,72 @@ class ChunkAppender
             columnCount++;
         }
         // the end of this parent
-        closeRangeMetadata(depth, EMPTY_BYTE_BUFFER);
-        maybeAppendAndReset();
+        closeRangeMetadata(depth, null);
         return columnCount;
     }
 
-    private void add(int depth, ByteBuffer value, ChunkFieldMetadata cfm)
+    private void add(int depth, ByteBuffer value, byte cfm)
     {
-        chunks[depth].values.add(value);
-        chunks[depth].value_metadata.add(cfm);
-        // FIXME: rough approx of metadata size: we'll be packing it sometime soon anyway
-        spanBytes += value.remaining() + 5;
+        if (value != null)
+        {
+            chunks[depth].values().add(value);
+            spanBytes += value.remaining();
+        }
+        addMeta(depth, cfm);
+        // estimate of metadata size
+        spanBytes += 3;
     }
 
     /** Adds range metadata to a chunk. */
-    private void openRangeMetadata(int depth, ByteBuffer start, IColumnContainer container, boolean parentFlag)
+    private void openRangeMetadata(int depth, ByteBuffer start, IColumnContainer container)
     {
-        assert !isOpen[depth] : "Range already open in " + chunks[depth];
-        ChunkFieldMetadata cfm = new ChunkFieldMetadata();
-        cfm.parent = parentFlag;
-        if (container.isMarkedForDelete())
-        {
-            // is deleted
-            cfm.type = ChunkFieldType.DELETED;
-            cfm.timestamp = container.getMarkedForDeleteAt();
-            cfm.localDeletionTime = container.getLocalDeletionTime();
-        }
-        else
-            // no metadata: store as null
-            // FIXME: note that we've stored range placeholders: once we are packing
-            // metadata we can skip null ranges completely
-            cfm.type = ChunkFieldType.NULL;
-        openRangeMetadata(depth, start, cfm);
+        openRangeMetadata(depth, start, container.getMarkedForDeleteAt(), container.getLocalDeletionTime());
     }
 
-    private void openRangeMetadata(int depth, ByteBuffer start, ChunkFieldMetadata cfm)
+    private void openRangeMetadata(int depth, ByteBuffer start, long timestamp, int localDeletionTime)
     {
-        // left...
-        chunks[depth].ranges.add(start);
-        chunks[depth].range_metadata.add(cfm);
-        isOpen[depth] = true;
-        // FIXME: rough approx of metadata size: we'll be packing it sometime soon anyway
-        spanBytes += start.remaining() + 5;
+        assert openType[depth] == Chunk.ENTRY_NULL :
+            "Range already open in " + chunks[depth] + ": " + openType[depth];
+        byte cfm;
+        if (start == null)
+            cfm = Chunk.ENTRY_RANGE_BEGIN_NULL;
+        else
+        {
+            cfm = Chunk.ENTRY_RANGE_BEGIN;
+            chunks[depth].values().add(start);
+            spanBytes += start.remaining();
+        }
+        chunks[depth].clientTimestampAdd(timestamp);
+        chunks[depth].localTimestampAdd(localDeletionTime);
+        addMeta(depth, cfm);
+        // record the open range
+        openType[depth] = cfm;
+        openClient[depth] = timestamp;
+        openLocal[depth] = localDeletionTime;
+        // estimate of metadata size
+        spanBytes += 3;
     }
 
     private void closeRangeMetadata(int depth, ByteBuffer end)
     {
-        Chunk chunk = chunks[depth];
-        assert isOpen[depth] : "Range not open in " + chunk;
-        // ...right
-        chunk.ranges.add(end);
-        isOpen[depth] = false;
-        spanBytes += end.remaining();
+        assert openType[depth] != Chunk.ENTRY_NULL :
+            "Range not open in " + chunks[depth];
+        byte cfm;
+        if (end == null)
+            cfm = Chunk.ENTRY_RANGE_END_NULL;
+        else
+        {
+            cfm = Chunk.ENTRY_RANGE_END;
+            chunks[depth].values().add(end);
+            spanBytes += end.remaining();
+        }
+        addMeta(depth, cfm);
+        openType[depth] = Chunk.ENTRY_NULL;
+    }
+
+    private void addMeta(int depth, byte cfm)
+    {
+        chunks[depth].metadataAdd(cfm);
     }
 
     /**
@@ -268,75 +238,70 @@ class ChunkAppender
 
         /**
          * Stash state for any open ranges.
-         * We need to preserve any open ranges w/ parents but we'd like to avoid
-         * allocating new chunks after each flush, so we use temporary variables.
          */
-        ByteBuffer[] splits = null, parents = null;
-        ChunkFieldMetadata[] splitsMeta = null, parentsMeta = null;
-        for (int i = 1; i < chunks.length; i++)
-        {
-            if (!isOpen[i])
-                continue;
-            // split the open range, asserting that it is not empty
-            // TODO: to avoid doing this to too many rows (causing fragmentation), we should
-            // eagerly close spans when we finish a key within ~75% of the threshold
-            if (splits == null)
-            {
-                // lazily allocate
-                int depth = chunks.length;
-                splits = new ByteBuffer[depth];
-                parents = new ByteBuffer[depth];
-                splitsMeta = new ChunkFieldMetadata[depth];
-                parentsMeta = new ChunkFieldMetadata[depth];
-            }
-            Chunk chunk = chunks[i];
-            int valueCount = chunk.value_metadata.size();
-            int rangeCount = chunk.range_metadata.size();
-            assert chunk.value_metadata.get(valueCount - 1).parent == chunk.range_metadata.get(rangeCount - 1).parent :
-                "Uh oh. The value parent disagrees with the range parent. Is the range empty? " + chunk;
-            // split the range on the last appended value
-            splits[i] = chunk.values.get(valueCount - 1);
-            splitsMeta[i] = chunk.range_metadata.get(rangeCount - 1);
-            // store the parent value
-            parents[i - 1] = chunks[i - 1].values.get(chunks[i - 1].values.size() - 1);
-            parentsMeta[i - 1] = chunks[i - 1].value_metadata.get(chunks[i - 1].values.size() - 1);
-            closeRangeMetadata(i, splits[i]);
-        }
+        Stash[] stashed = maybeStashRanges();
         /**
          * Flush and clear chunks from top to bottom
          */
         for (int i = 0; i < chunks.length; i++)
         {
             Chunk chunk = chunks[i];
-            // append and force a sync: @see class javadoc
-            dataFile.append(chunk);
-            dataFile.sync();
-            chunk.values.clear();
-            chunk.value_metadata.clear();
-            chunk.ranges.clear();
-            chunk.range_metadata.clear();
+            chunk.append(dataFile);
+            chunk.clear();
         }
         spanBytes = 0;
         /**
-         * Restore any ranges that were open.
+         * Restore any open ranges.
          */
-        if (splits == null)
-            return;
-        for (int i = 1; i < chunks.length; i++)
+        maybeRestoreRanges(stashed);
+    }
+
+    /**
+     * We need to preserve any open ranges but we'd like to avoid
+     * allocating new chunks after each flush, so we use temporary variables.
+     * TODO: to avoid doing this to too many spans (causing fragmentation), we should
+     * eagerly close spans when we finish a key within ~75% of the threshold
+     */
+    private Stash[] maybeStashRanges()
+    {
+        Stash[] stashed = null;
+        for (int i = 0; i < chunks.length; i++)
         {
-            if (splits[i] == null)
-                continue;
-            // restore the range
-            openRangeMetadata(i, splits[i], splitsMeta[i]);
-            // and the parent value
-            add(i - 1, parents[i - 1], parentsMeta[i - 1]);
+            if (openType[i] == Chunk.ENTRY_NULL)
+                // if a parent is not open, a child is not open
+                break;
+            Chunk chunk = chunks[i];
+
+            // lazy init
+            if (stashed == null) stashed = new Stash[chunks.length];
+            // split the range on the last appended value, and save the open metadata
+            stashed[i] = new Stash(chunk.values().get(chunk.values().size() - 1),
+                                   openClient[i],
+                                   openLocal[i]);
+            closeRangeMetadata(i, stashed[i].val);
+        }
+        return stashed;
+    }
+
+    private void maybeRestoreRanges(Stash[] stashed)
+    {
+        if (stashed == null)
+            return;
+        for (int i = 0; i < stashed.length; i++)
+        {
+            Stash s = stashed[i];
+            if (s == null)
+                // if a parent is not open, a child is not open
+                break;
+            // restore the range and the current value
+            openRangeMetadata(i, s.val, s.client, s.local);
         }
     }
 
     /** @return True if internal buffers are empty. */
     public boolean isFlushed()
     {
-        if (chunks[0].value_metadata.isEmpty() && chunks[0].range_metadata.isEmpty())
+        if (chunks[0].metadata().position() == 0)
             return true;
         return false;
     }
@@ -345,5 +310,20 @@ class ChunkAppender
     public void flush() throws IOException
     {
         appendAndReset();
+    }
+
+    /** One level of the state of a range that needed to be split across spans. */
+    private static final class Stash
+    {
+        public final ByteBuffer val;
+        public final long client;
+        public final int local;
+
+        public Stash(ByteBuffer val, long client, int local)
+        {
+            this.val = val;
+            this.client = client;
+            this.local = local;
+        }
     }
 }

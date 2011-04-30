@@ -200,7 +200,7 @@ public class Rebuilder implements CompactionInfo.Holder
 
         protected SSTableReader doIndexing() throws IOException
         {
-            long estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
+            long estimatedRows = SSTable.estimateRowsFromData(cfs.metadata, cfs.partitioner, desc, dfile);
             IndexWriter iwriter = new IndexWriter(desc, cfs.partitioner, ReplayPosition.NONE, estimatedRows);
             try
             {
@@ -256,7 +256,7 @@ public class Rebuilder implements CompactionInfo.Holder
         protected SSTableReader doIndexing() throws IOException
         {
             // read from the input and write to a new output sstable, clearing as we go
-            long estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
+            long estimatedRows = SSTable.estimateRowsFromData(cfs.metadata, cfs.partitioner, desc, dfile);
             SSTableWriter writer = cfs.createFlushWriter(estimatedRows, dfile.length(), ReplayPosition.NONE);
             try
             {
