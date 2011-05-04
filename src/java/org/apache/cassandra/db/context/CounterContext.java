@@ -63,11 +63,11 @@ import org.apache.cassandra.utils.NodeId;
  */
 public class CounterContext implements IContext
 {
-    private static final int HEADER_SIZE_LENGTH = DBConstants.shortSize;
-    private static final int HEADER_ELT_LENGTH = DBConstants.shortSize;
-    private static final int CLOCK_LENGTH = DBConstants.longSize;
-    private static final int COUNT_LENGTH = DBConstants.longSize;
-    private static final int STEP_LENGTH = NodeId.LENGTH + CLOCK_LENGTH + COUNT_LENGTH;
+    public static final int HEADER_SIZE_LENGTH = DBConstants.shortSize;
+    public static final int HEADER_ELT_LENGTH = DBConstants.shortSize;
+    public static final int CLOCK_LENGTH = DBConstants.longSize;
+    public static final int COUNT_LENGTH = DBConstants.longSize;
+    public static final int STEP_LENGTH = NodeId.LENGTH + CLOCK_LENGTH + COUNT_LENGTH;
 
     private static final Logger logger = Logger.getLogger(CounterContext.class);
 
@@ -119,7 +119,7 @@ public class CounterContext implements IContext
     }
 
     // write a tuple (node id, clock, count) at an absolute (bytebuffer-wise) offset
-    private static void writeElementAtOffset(ByteBuffer context, int offset, NodeId id, long clock, long count)
+    public static void writeElementAtOffset(ByteBuffer context, int offset, NodeId id, long clock, long count)
     {
         context = context.duplicate();
         context.position(offset);

@@ -139,14 +139,14 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
         for (int fromidx = 0; fromidx < from.size(); fromidx++)
         {
             ByteBuffer cur = from.get(fromidx);
-            uncompressed = ByteBufferUtil.ensureRemaining(uncompressed, DBConstants.intSize_ + cur.remaining(), true);
+            uncompressed = ByteBufferUtil.ensureRemaining(uncompressed, DBConstants.intSize + cur.remaining(), true);
             uncompressed.putInt(cur.remaining());
             uncompressed.put(cur.duplicate());
         }
         uncompressed.flip();
         final byte[] compressed = LZFEncoder.encode(uncompressed.array(), uncompressed.remaining());
         // append compressed data
-        to = ByteBufferUtil.ensureRemaining(to, DBConstants.intSize_ + compressed.length, false);
+        to = ByteBufferUtil.ensureRemaining(to, DBConstants.intSize + compressed.length, false);
         to.putInt(compressed.length);
         to.put(compressed);
         return to;
