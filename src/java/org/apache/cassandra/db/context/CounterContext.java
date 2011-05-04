@@ -59,11 +59,11 @@ import org.apache.cassandra.utils.NodeId;
  */
 public class CounterContext implements IContext
 {
-    private static final int HEADER_SIZE_LENGTH = DBConstants.shortSize_;
-    private static final int HEADER_ELT_LENGTH = DBConstants.shortSize_;
-    private static final int CLOCK_LENGTH = DBConstants.longSize_;
-    private static final int COUNT_LENGTH = DBConstants.longSize_;
-    private static final int STEP_LENGTH = NodeId.LENGTH + CLOCK_LENGTH + COUNT_LENGTH;
+    public static final int HEADER_SIZE_LENGTH = DBConstants.shortSize_;
+    public static final int HEADER_ELT_LENGTH = DBConstants.shortSize_;
+    public static final int CLOCK_LENGTH = DBConstants.longSize_;
+    public static final int COUNT_LENGTH = DBConstants.longSize_;
+    public static final int STEP_LENGTH = NodeId.LENGTH + CLOCK_LENGTH + COUNT_LENGTH;
 
     // Time in ms since a node id has been renewed before we consider using it
     // during a merge
@@ -111,7 +111,7 @@ public class CounterContext implements IContext
     }
 
     // write a tuple (node id, clock, count) at offset
-    private static void writeElementAtOffset(ByteBuffer context, int offset, NodeId id, long clock, long count)
+    public static void writeElementAtOffset(ByteBuffer context, int offset, NodeId id, long clock, long count)
     {
         ByteBufferUtil.arrayCopy(id.bytes(), id.bytes().position(), context, offset, NodeId.LENGTH);
         context.putLong(offset + NodeId.LENGTH, clock);
