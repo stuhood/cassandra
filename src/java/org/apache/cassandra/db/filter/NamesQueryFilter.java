@@ -60,9 +60,9 @@ public class NamesQueryFilter implements IFilter
         return new SSTableNamesIterator(sstable, key, columns);
     }
     
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
     {
-        return new SSTableNamesIterator(sstable, file, key, columns);
+        return new SSTableNamesIterator(sstable, file, columns);
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

@@ -52,7 +52,7 @@ public interface IFilter
      * @param file Already opened file data input, saves us opening another one
      * @param key The key of the row we are about to iterate over
      */
-    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key);
+    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file);
 
     /**
      * returns an iterator that returns columns from the given SSTable

@@ -24,6 +24,7 @@ import java.io.IOError;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,6 +90,8 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
     {
         try
         {
+            if (row != null)
+                row.close();
             long position = sstable.getPosition(seekKey, SSTableReader.Operator.GE);
             if (position < 0)
             {
@@ -142,15 +145,16 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
 
     protected class KeyScanningIterator implements Iterator<IColumnIterator>
     {
-        protected long finishedAt;
-
         public boolean hasNext()
         {
             try
             {
-                if (row == null)
-                    return !file.isEOF();
-                return finishedAt < file.length();
+                if (row != null)
+                {
+                    row.close();
+                    row = null;
+                }
+                return !file.isEOF();
             }
             catch (IOException e)
             {
@@ -160,28 +164,14 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
 
         public IColumnIterator next()
         {
+            // hasNext will handle consuming the current row if it is still open
+            if (!hasNext()) throw new NoSuchElementException();
             try
             {
-                if (row != null)
-                    file.seek(finishedAt);
-                assert !file.isEOF();
-
-                DecoratedKey key = SSTableReader.decodeKey(sstable.partitioner,
-                                                           sstable.descriptor,
-                                                           ByteBufferUtil.readWithShortLength(file));
-                long dataSize = SSTableReader.readRowSize(file, sstable.descriptor);
-                long dataStart = file.getFilePointer();
-                finishedAt = dataStart + dataSize;
-
-                if (filter == null)
-                {
-                    row = new SSTableIdentityIterator(sstable, file, key, dataStart, dataSize);
-                    return row;
-                }
-                else
-                {
-                    return row = filter.getSSTableColumnIterator(sstable, file, key);
-                }
+                if (filter != null)
+                    return row = filter.getSSTableColumnIterator(sstable, file);
+                long start = file.getFilePointer();
+                return row = new SSTableIdentityIterator(sstable, file, start, false);
             }
             catch (IOException e)
             {
@@ -195,12 +185,11 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
         }
 
         @Override
-        public String toString() {
-            return getClass().getSimpleName() + "(" +
-                   "finishedAt:" + finishedAt +
-                   ")";
+        public String toString()
+        {
+            return getClass().getSimpleName() + "(row=:" + row + ")";
+        }
     }
-}
 
     @Override
     public String toString() {

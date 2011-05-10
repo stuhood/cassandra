@@ -365,78 +365,56 @@ public class SSTableWriter extends SSTable implements Closeable
          *     then removed quickly afterward (a key that we had lost but become responsible again could have stayed in cache). That key
          *     would be obsolete and so we must invalidate the cache).
          */
-        protected void updateCache(DecoratedKey key, long dataSize, AbstractCompactedRow row) throws IOException
+        protected void updateCache(SSTableIdentityIterator row) throws IOException
         {
-            ColumnFamily cached = cfs.getRawCachedRow(key);
-            if (cached != null)
+            ColumnFamily cached = cfs.getRawCachedRow(row.getKey());
+            if (cached == null)
+                return;
+            switch (type)
             {
-                switch (type)
-                {
-                    case AES:
-                        if (dataSize > DatabaseDescriptor.getInMemoryCompactionLimit())
-                        {
-                            // We have a key in cache for a very big row, that is fishy. We don't fail here however because that would prevent the sstable
-                            // from being build (and there is no real point anyway), so we just invalidate the row for correction and log a warning.
-                            logger.warn("Found a cached row over the in memory compaction limit during post-streaming rebuilt; it is highly recommended to avoid huge row on column family with row cache enabled.");
-                            cfs.invalidateCachedRow(key);
-                        }
-                        else
-                        {
-                            ColumnFamily cf;
-                            if (row == null)
-                            {
-                                // If not provided, read from disk.
-                                cf = ColumnFamily.create(cfs.metadata);
-                                ColumnFamily.serializer().deserializeColumns(dfile, cf, true, true);
-                            }
-                            else
-                            {
-                                assert row instanceof PrecompactedRow;
-                                // we do not purge so we should not get a null here
-                                cf = ((PrecompactedRow)row).getFullColumnFamily();
-                            }
-                            cfs.updateRowCache(key, cf);
-                        }
-                        break;
-                    default:
-                        cfs.invalidateCachedRow(key);
-                        break;
-                }
+                case AES:
+                    if (row.getDataSize() > DatabaseDescriptor.getInMemoryCompactionLimit())
+                    {
+                        // We have a key in cache for a very big row, that is fishy. We don't fail here however because that would prevent the sstable
+                        // from being build (and there is no real point anyway), so we just invalidate the row for correction and log a warning.
+                        logger.warn("Found a cached row over the in memory compaction limit during post-streaming rebuilt; it is highly recommended to avoid huge row on column family with row cache enabled.");
+                        cfs.invalidateCachedRow(row.getKey());
+                    }
+                    else
+                    {
+                        cfs.updateRowCache(row.getKey(), row.getColumnFamilyWithColumns());
+                    }
+                    break;
+                default:
+                    cfs.invalidateCachedRow(row.getKey());
+                    break;
             }
         }
 
         protected SSTableReader doIndexing() throws IOException
         {
             long estimatedRows = SSTable.estimateRowsFromData(desc, dfile);
-            IndexWriter iwriter = new IndexWriter(desc, StorageService.getPartitioner(), estimatedRows);
+            IndexWriter iwriter = new IndexWriter(desc, cfs.partitioner, estimatedRows);
             try
             {
                 EstimatedHistogram rowSizes = SSTable.defaultRowHistogram();
                 EstimatedHistogram columnCounts = SSTable.defaultColumnHistogram();
                 long rows = 0;
-                DecoratedKey key;
-                long rowPosition = 0;
-                while (rowPosition < dfile.length())
+                while (!dfile.isEOF())
                 {
-                    // read key
-                    key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(dfile));
-                    iwriter.afterAppend(key, rowPosition);
-
-                    // seek to next key
-                    long dataSize = SSTableReader.readRowSize(dfile, desc);
-                    rowPosition = dfile.getFilePointer() + dataSize;
-
-                    IndexHelper.skipBloomFilter(dfile);
-                    IndexHelper.skipIndex(dfile);
-                    ColumnFamily.serializer().deserializeFromSSTableNoColumns(ColumnFamily.create(cfs.metadata), dfile);
-
-                    // don't move that statement around, it expects the dfile to be before the columns
-                    updateCache(key, dataSize, null);
-
-                    rowSizes.add(dataSize);
-                    columnCounts.add(dfile.readInt());
-                    
-                    dfile.seek(rowPosition);
+                    long rowPosition = dfile.getFilePointer();
+                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata,
+                                                                               cfs.partitioner,
+                                                                               desc,
+                                                                               dfile,
+                                                                               rowPosition,
+                                                                               true);
+                    updateCache(iter);
+                    // close the iterator to position ourself at the end of the row
+                    iter.close();
+                    iwriter.afterAppend(iter.getKey(), rowPosition);
+                    rowSizes.add(iter.getDataSize());
+                    columnCounts.add(iter.getColumnCount());
 
                     rows++;
                 }
@@ -484,16 +462,19 @@ public class SSTableWriter extends SSTable implements Closeable
                 long dfileLength = dfile.length();
                 while (!dfile.isEOF())
                 {
-                    // iterator over the columns in the row
-                    key = SSTableReader.decodeKey(StorageService.getPartitioner(), desc, ByteBufferUtil.readWithShortLength(dfile));
-                    long dataSize = SSTableReader.readRowSize(dfile, desc);
-                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata, dfile, key, dfile.getFilePointer(), dataSize, true);
+                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata,
+                                                                               cfs.partitioner,
+                                                                               desc,
+                                                                               dfile,
+                                                                               dfile.getFilePointer(),
+                                                                               true);
+                    updateCache(iter);
 
                     AbstractCompactedRow row = controller.getCompactedRow(iter);
-                    updateCache(key, dataSize, row);
 
-                    // append
+                    // append and close
                     writer.append(row);
+                    iter.close();
                 }
             }
             catch (IOException e)
