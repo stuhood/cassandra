@@ -41,7 +41,13 @@ public interface IColumnIterator extends CloseableIterator<IColumn>
      */
     public DecoratedKey getKey();
 
-    /** clean up any open resources */
+    /**
+     * Clean up any open resources.
+     * For iterators backed by files, there are two cases:
+     * 1. if the iterator opened the file, calling close will close the file
+     * 2. if an open file was passed to the iterator, the remaining content for the
+     *    row represented by the iterator will be consumed
+     */
     public void close() throws IOException;
 }
 

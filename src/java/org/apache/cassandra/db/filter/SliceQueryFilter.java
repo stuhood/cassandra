@@ -66,9 +66,9 @@ public class SliceQueryFilter implements IFilter
         return new SSTableSliceIterator(sstable, key, start, finish, reversed);
     }
     
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
     {
-        return new SSTableSliceIterator(sstable, file, key, start, finish, reversed);
+        return new SSTableSliceIterator(sstable, file, start, finish, reversed);
     }
 
     public SuperColumn filterSuperColumn(SuperColumn superColumn, int gcBefore)

@@ -29,8 +29,11 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
+import org.apache.cassandra.io.util.FileMark;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
@@ -38,32 +41,34 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  */
 public class SSTableSliceIterator implements IColumnIterator
 {
-    private final FileDataInput fileToClose;
+    private final FileDataInput file;
+    private final FileMark mark;
+    private final long rowLength;
+
     private IColumnIterator reader;
     private DecoratedKey key;
 
     public SSTableSliceIterator(SSTableReader sstable, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
         this.key = key;
-        fileToClose = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
-        if (fileToClose == null)
+        mark = null;
+        file = sstable.getFileDataInput(this.key, DatabaseDescriptor.getSlicedReadBufferSizeInKB() * 1024);
+        if (file == null)
+        {
+            this.rowLength = -1;
             return;
+        }
 
         try
         {
-            DecoratedKey keyInDisk = SSTableReader.decodeKey(sstable.partitioner,
-                                                             sstable.descriptor,
-                                                             ByteBufferUtil.readWithShortLength(fileToClose));
-            assert keyInDisk.equals(key)
-                   : String.format("%s != %s in %s", keyInDisk, key, fileToClose.getPath());
-            SSTableReader.readRowSize(fileToClose, sstable.descriptor);
+            this.rowLength = init(sstable);
         }
         catch (IOException e)
         {
+            FileUtils.closeQuietly(file);
             throw new IOError(e);
         }
-
-        reader = createReader(sstable, fileToClose, startColumn, finishColumn, reversed);
+        reader = createReader(sstable, file, startColumn, finishColumn, reversed);
     }
 
     /**
@@ -73,16 +78,32 @@ public class SSTableSliceIterator implements IColumnIterator
      * If this class creates, it will close the underlying file when #close() is called.
      * If a caller passes a non-null argument, this class will NOT close the underlying file when the iterator is closed (i.e. the caller is responsible for closing the file)
      * In all cases the caller should explicitly #close() this iterator.
-     * @param key The key the requested slice resides under
      * @param startColumn The start of the slice
      * @param finishColumn The end of the slice
      * @param reversed Results are returned in reverse order iff reversed is true.
      */
-    public SSTableSliceIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
+    public SSTableSliceIterator(SSTableReader sstable, FileDataInput file, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
     {
-        this.key = key;
-        fileToClose = null;
+        this.file = file;
+        try
+        {
+            this.rowLength = init(sstable);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+        this.mark = file.mark();
         reader = createReader(sstable, file, startColumn, finishColumn, reversed);
+    }
+
+    /** Reads the key and row length from the end of the row. */
+    private long init(SSTableReader sstable) throws IOException
+    {
+        this.key = SSTableReader.decodeKey(sstable.partitioner,
+                                           sstable.descriptor,
+                                           ByteBufferUtil.readWithShortLength(file));
+        return SSTableReader.readRowSize(file, sstable.descriptor);
     }
 
     private static IColumnIterator createReader(SSTableReader sstable, FileDataInput file, ByteBuffer startColumn, ByteBuffer finishColumn, boolean reversed)
@@ -119,8 +140,14 @@ public class SSTableSliceIterator implements IColumnIterator
 
     public void close() throws IOException
     {
-        if (fileToClose != null)
-            fileToClose.close();
+        if (mark != null)
+            // consume the remaining content
+            FileUtils.skipBytesFully(file, rowLength - file.bytesPastMark(mark));
+        else
+        {
+            // we opened the file: close it
+            if (file != null)
+                file.close();
+        }
     }
-
 }

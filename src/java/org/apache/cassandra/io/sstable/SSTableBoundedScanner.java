@@ -18,6 +18,7 @@
  */
 package org.apache.cassandra.io.sstable;
 
+import java.io.IOError;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -82,13 +83,20 @@ public class SSTableBoundedScanner extends SSTableScanner
             if (!super.hasNext())
                 return false;
 
-            if (finishedAt < currentRange.right)
+            if (file.getFilePointer() < currentRange.right)
                 return true;
 
             if (rangeIterator.hasNext())
             {
                 currentRange = rangeIterator.next();
-                finishedAt = currentRange.left; // next() will seek for us
+                try
+                {
+                    file.seek(currentRange.left);
+                }
+                catch (IOException e)
+                {
+                    throw new IOError(e);
+                }
                 return true;
             }
             else

@@ -501,6 +501,7 @@ public class CompactionManager implements CompactionManagerMBean
                     if (logger.isDebugEnabled())
                         logger.debug("Reading row at " + rowStart);
 
+                    // FIXME: moved inside of sstableidentityiterator
                     DecoratedKey key = null;
                     long dataSize = -1;
                     try

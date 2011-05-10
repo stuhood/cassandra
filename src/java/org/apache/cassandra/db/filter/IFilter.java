@@ -49,10 +49,9 @@ public interface IFilter
      * Get an iterator that returns columns from the given SSTable using the opened file
      * matching the Filter criteria in sorted order.
      * @param sstable
-     * @param file Already opened file data input, saves us opening another one
-     * @param key The key of the row we are about to iterate over
+     * @param file An open file positioned at the head of the row to read
      */
-    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key);
+    public abstract IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file);
 
     /**
      * returns an iterator that returns columns from the given SSTable

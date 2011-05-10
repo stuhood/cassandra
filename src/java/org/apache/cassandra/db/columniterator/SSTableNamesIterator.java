@@ -50,7 +50,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
     private ColumnFamily cf;
     private Iterator<IColumn> iter;
     public final SortedSet<ByteBuffer> columns;
-    public final DecoratedKey key;
+    public DecoratedKey key;
 
     public SSTableNamesIterator(SSTableReader sstable, DecoratedKey key, SortedSet<ByteBuffer> columns)
     {
@@ -64,11 +64,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
 
         try
         {
-            DecoratedKey keyInDisk = SSTableReader.decodeKey(sstable.partitioner,
-                                                             sstable.descriptor,
-                                                             ByteBufferUtil.readWithShortLength(file));
-            assert keyInDisk.equals(key) : String.format("%s != %s in %s", keyInDisk, key, file.getPath());
-            SSTableReader.readRowSize(file, sstable.descriptor);
+            init(sstable, file);
             read(sstable, file);
         }
         catch (IOException e)
@@ -81,20 +77,34 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
         }
     }
 
-    public SSTableNamesIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key, SortedSet<ByteBuffer> columns)
+    public SSTableNamesIterator(SSTableReader sstable, FileDataInput file, SortedSet<ByteBuffer> columns)
     {
         assert columns != null;
         this.columns = columns;
-        this.key = key;
 
         try
         {
+            // read the key and rowlength
+            long rowLength = init(sstable, file);
+            FileMark mark = file.mark();
             read(sstable, file);
+            // although this iterator reads all content eagerly, we fulfil the
+            // IColumnIterator.close() contract by eagerly consuming here
+            FileUtils.skipBytesFully(file, rowLength - file.bytesPastMark(mark));
         }
         catch (IOException ioe)
         {
             throw new IOError(ioe);
         }
+    }
+
+    /** Reads the key and row length from the head of the row. */
+    private long init(SSTableReader sstable, FileDataInput file) throws IOException
+    {
+        this.key = SSTableReader.decodeKey(sstable.partitioner,
+                                           sstable.descriptor,
+                                           ByteBufferUtil.readWithShortLength(file));
+        return SSTableReader.readRowSize(file, sstable.descriptor);
     }
 
     private void read(SSTableReader sstable, FileDataInput file)

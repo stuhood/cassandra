@@ -103,9 +103,8 @@ public class IncomingStreamReader
     private SSTableReader streamIn(DataInput input, PendingFile localFile, PendingFile remoteFile) throws IOException
     {
         ColumnFamilyStore cfs = Table.open(localFile.desc.ksname).getColumnFamilyStore(localFile.desc.cfname);
-        DecoratedKey key;
         SSTableWriter writer = new SSTableWriter(localFile.getFilename(), remoteFile.estimatedKeys);
-        CompactionController controller = null;
+        CompactionController controller = new CompactionController(cfs, Collections.<SSTableReader>emptyList(), Integer.MAX_VALUE, true);
 
         try
         {
@@ -118,68 +117,42 @@ public class IncomingStreamReader
                 while (bytesRead < length)
                 {
                     in.reset(0);
-                    key = SSTableReader.decodeKey(StorageService.getPartitioner(), localFile.desc, ByteBufferUtil.readWithShortLength(in));
-                    long dataSize = SSTableReader.readRowSize(in, localFile.desc);
-                    ColumnFamily cf = null;
-                    if (cfs.metadata.getDefaultValidator().isCommutative())
-                    {
-                        // take care of counter column family
-                        if (controller == null)
-                            controller = new CompactionController(cfs, Collections.<SSTableReader>emptyList(), Integer.MAX_VALUE, true);
-                        SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata, in, key, 0, dataSize, true);
-                        AbstractCompactedRow row = controller.getCompactedRow(iter);
-                        writer.append(row);
-                        // row append does not update the max timestamp on its own
-                        writer.updateMaxTimestamp(row.maxTimestamp());
 
-                        if (row instanceof PrecompactedRow)
-                        {
-                            // we do not purge so we should not get a null here
-                            cf = ((PrecompactedRow)row).getFullColumnFamily();
-                        }
-                    }
-                    else
-                    {
-                        // skip BloomFilter
-                        IndexHelper.skipBloomFilter(in);
-                        // skip Index
-                        IndexHelper.skipIndex(in);
-
-                        // restore ColumnFamily
-                        cf = ColumnFamily.create(cfs.metadata);
-                        ColumnFamily.serializer().deserializeFromSSTableNoColumns(cf, in);
-                        ColumnFamily.serializer().deserializeColumns(in, cf, true);
-
-                        // write key and cf
-                        writer.append(key, cf);
-                    }
+                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata, StorageService.getPartitioner(), localFile.desc, in, true);
+                    AbstractCompactedRow row = controller.getCompactedRow(iter);
+                    writer.append(row);
+                    // row append does not update the max timestamp on its own
+                    writer.updateMaxTimestamp(row.maxTimestamp());
 
                     // update cache
-                    ColumnFamily cached = cfs.getRawCachedRow(key);
+                    ColumnFamily cached = cfs.getRawCachedRow(iter.getKey());
                     if (cached != null)
                     {
                         switch (remoteFile.type)
                         {
                             case AES:
-                                if (dataSize > DatabaseDescriptor.getInMemoryCompactionLimit())
+                                if (row instanceof PrecompactedRow)
+                                {
+                                    // we do not purge so we should not get a null here
+                                    ColumnFamily cf = ((PrecompactedRow)row).getFullColumnFamily();
+                                    cfs.updateRowCache(iter.getKey(), cf);
+                                }
+                                else
                                 {
                                     // We have a key in cache for a very big row, that is fishy. We don't fail here however because that would prevent the sstable
                                     // from being build (and there is no real point anyway), so we just invalidate the row for correction and log a warning.
                                     logger.warn("Found a cached row over the in memory compaction limit during post-streaming rebuilt; it is highly recommended to avoid huge row on column family with row cache enabled.");
-                                    cfs.invalidateCachedRow(key);
-                                }
-                                else
-                                {
-                                    assert cf != null;
-                                    cfs.updateRowCache(key, cf);
+                                    cfs.invalidateCachedRow(iter.getKey());
                                 }
                                 break;
                             default:
-                                cfs.invalidateCachedRow(key);
+                                cfs.invalidateCachedRow(iter.getKey());
                                 break;
                         }
                     }
 
+                    // close the row to ensure it is consumed
+                    iter.close();
                     bytesRead += in.getBytesRead();
                     remoteFile.progress += in.getBytesRead();
                 }

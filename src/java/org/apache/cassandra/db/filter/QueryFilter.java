@@ -79,11 +79,11 @@ public class QueryFilter
         return superFilter.getSSTableColumnIterator(sstable, key);
     }
 
-    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file, DecoratedKey key)
+    public IColumnIterator getSSTableColumnIterator(SSTableReader sstable, FileDataInput file)
     {
         if (path.superColumnName == null)
-            return filter.getSSTableColumnIterator(sstable, file, key);
-        return superFilter.getSSTableColumnIterator(sstable, file, key);
+            return filter.getSSTableColumnIterator(sstable, file);
+        return superFilter.getSSTableColumnIterator(sstable, file);
     }
 
     // TODO move gcBefore into a field
