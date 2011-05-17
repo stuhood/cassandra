@@ -23,6 +23,7 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.nio.ByteBuffer;
 
@@ -32,6 +33,7 @@ import org.apache.cassandra.io.util.BufferedRandomAccessFile;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.BoundedBitSet;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.MurmurHash;
 
 /**
  * Implements lazy decoding of a chunk of content from a Span. Not thread safe.
@@ -49,6 +51,11 @@ public final class Chunk
     public static final byte ENTRY_EXPIRING = 0x8;
     public static final byte ENTRY_STANDARD = 0x9;
     public static final byte ENTRY_COUNTER = 0x10;
+
+    // written at the beginning of every chunk
+    public static final byte[] MAGIC = {
+        0xf, 0x2, 0xc, 0x5, 0x3, 0x4, 0xc, 0xe, 0x3, 0x3, 0x9, 0x9, 0xa, 0x1, 0xc, 0x3
+    };
 
     // FIXME: allocate chunks with a maximum capacity
     private static final int ENTRIES = 256;
@@ -220,9 +227,11 @@ public final class Chunk
             }
         }, encoded);
 
-        /** flush */
+        /** write magic, flush, and append checksum */
         encoded.flip();
+        file.write(MAGIC);
         ByteBufferUtil.writeWithLength(encoded, file);
+        file.writeInt(MurmurHash.hash32(encoded, encoded.position(), encoded.remaining(), 0));
     }
 
     /** Chunks will usually be read a span at a time: see Chunks.cursor.nextSpan(). */
@@ -231,7 +240,12 @@ public final class Chunk
         decoded = false;
         try
         {
+            readMagic(file);
             encoded = ByteBufferUtil.readWithLength(file);
+            // confirm the checksum
+            int hash = file.readInt();
+            if (MurmurHash.hash32(encoded, encoded.position(), encoded.remaining(), 0) != hash)
+                throw new IOException("Checksum mismatch");
             // eagerly separate the metadata: leave the rest to be decoded later
             int mlen = encoded.getInt();
             int mend = encoded.position() + mlen;
@@ -243,5 +257,14 @@ public final class Chunk
         {
             throw new IOError(e);
         }
+    }
+
+    private void readMagic(FileDataInput file) throws IOException
+    {
+        // TODO: implement resync'ing by scanning for magic
+        byte[] magic = new byte[MAGIC.length];
+        file.readFully(magic);
+        if (!Arrays.equals(magic, MAGIC))
+            throw new IOException("Not positioned at a valid block");
     }
 }
