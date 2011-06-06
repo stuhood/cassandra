@@ -140,12 +140,18 @@ public class Descriptor
         hashCode = Objects.hashCode(directory, generation, ksname, cfname);
     }
 
+    public File fileFor(Component component)
+    {
+        // we should prematerialize component filenames for the common components
+        return new File(filenameFor(component.name()));
+    }
+
     public String filenameFor(Component component)
     {
         return filenameFor(component.name());
     }
     
-    private String baseFilename()
+    private StringBuilder baseFilename()
     {
         StringBuilder buff = new StringBuilder();
         buff.append(directory).append(File.separatorChar);
@@ -155,7 +161,7 @@ public class Descriptor
         if (!LEGACY_VERSION.equals(version.version))
             buff.append(version.version).append(separator);
         buff.append(generation);
-        return buff.toString();
+        return buff;
     }
 
     /**
@@ -164,7 +170,7 @@ public class Descriptor
      */
     public String filenameFor(String suffix)
     {
-        return baseFilename() + separator + suffix;
+        return baseFilename().append(separator).append(suffix).toString();
     }
 
     /**
@@ -288,7 +294,7 @@ public class Descriptor
     @Override
     public String toString()
     {
-        return baseFilename();
+        return baseFilename().toString();
     }
 
     @Override

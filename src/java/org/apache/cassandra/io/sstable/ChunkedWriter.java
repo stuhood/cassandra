@@ -32,6 +32,8 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.compaction.AbstractCompactedRow;
+import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.compress.CompressedSequentialWriter;
 import org.apache.cassandra.io.util.*;
@@ -39,6 +41,7 @@ import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.BloomFilter;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.BoundedBitSet;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class ChunkedWriter extends SSTableWriter
@@ -64,7 +67,7 @@ public class ChunkedWriter extends SSTableWriter
               metadata,
               partitioner,
               sstableMetadataCollector);
-        iwriter = new IndexWriter(descriptor, partitioner, keyCount);
+        iwriter = new IndexWriter(descriptor, metadata, partitioner, keyCount);
 
         if (compression)
         {
@@ -86,7 +89,11 @@ public class ChunkedWriter extends SSTableWriter
 
     private void createAppender()
     {
-        appender = new ChunkAppender(descriptor, metadata, dataFile, iwriter);
+        appender = new ChunkAppender(descriptor,
+                                     metadata,
+                                     dataFile,
+                                     iwriter,
+                                     sstableMetadataCollector);
     }
 
     public void mark() throws IOException
@@ -138,10 +145,6 @@ public class ChunkedWriter extends SSTableWriter
 
     public BlockHeader append(AbstractCompactedRow row, boolean computeHeader) throws IOException
     {
-        // max timestamp is not collected here, because we want to avoid deserializing an EchoedRow
-        // instead, it is collected when calling ColumnFamilyStore.createCompactionWriter
-        sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - currentPosition);
-        sstableMetadataCollector.addColumnCount(row.columnCount());
         return append(row.key, row.getMetadata(), row.iterator(), computeHeader);
     }
 
@@ -161,6 +164,9 @@ public class ChunkedWriter extends SSTableWriter
     {
         long startPosition = beforeAppend(decoratedKey);
         appender.append(decoratedKey, cf, iter);
+
+        // max timestamp and column count are recorded within the appender
+        sstableMetadataCollector.addRowSize(dataFile.getFilePointer() - startPosition);
 
         BlockHeader header = null;
         if (computeHeader)
@@ -269,6 +275,8 @@ public class ChunkedWriter extends SSTableWriter
     static class IndexWriter implements Closeable
     {
         private final SequentialWriter indexFile;
+        // for each level, a type to be used for compression
+        public final List<AbstractType> types;
         public final Descriptor desc;
         public final IPartitioner partitioner;
         public final SegmentedFile.Builder builder;
@@ -276,13 +284,26 @@ public class ChunkedWriter extends SSTableWriter
         public final BloomFilter bf;
         private FileMark mark;
 
-        protected DecoratedKey key = null;
+        // buffers for indexed content
+        protected final List<ByteBuffer> keys;
+        protected final List<ByteBuffer> names;
+        // a bitset for the name level that toggles when the parent of that level has changed
+        protected final BoundedBitSet nameparents;
+        // TODO: avoid boxing
+        protected final List<Long> offsets;
+        // we store a single level's worth of metadata for observed rows
+        protected final List<Long> markedForDeleteAt;
+        protected final List<Long> localDeletionTime;
+        protected final BoundedBitSet metaparent;
+        // a reusable buffer for output data, before it is appended to the file
+        private ByteBuffer outbuff = ByteBuffer.allocate(4096);
+        protected final Observer observer;
+
+        // last appended key and position
+        protected DecoratedKey firstKey = null;
         protected long dataPosition = -1;
 
-        // state recorded between appends/resets
-        protected long count = 0;
-
-        IndexWriter(Descriptor desc, IPartitioner part, long keyCount) throws IOException
+        public IndexWriter(Descriptor desc, CFMetaData meta, IPartitioner part, long keyCount) throws IOException
         {
             this.desc = desc;
             this.partitioner = part;
@@ -290,89 +311,148 @@ public class ChunkedWriter extends SSTableWriter
             builder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
             summary = new IndexSummary(keyCount);
             bf = BloomFilter.getFilter(keyCount, 15);
-            estimatedRowSize = SSTable.defaultRowHistogram();
-            estimatedColumnCount = SSTable.defaultColumnHistogram();
+
+            this.types = meta.getTypes();
+            // the last type is for the values (not indexed)
+            this.keys = new ArrayList<ByteBuffer>();
+            this.names = new ArrayList<ByteBuffer>();
+            this.nameparents = new BoundedBitSet(1024);
+            this.offsets = new ArrayList<Long>();
+            this.markedForDeleteAt = new ArrayList<Long>();
+            this.localDeletionTime = new ArrayList<Long>();
+            this.metaparent = new BoundedBitSet(1024);
+
+            // TODO: should replace with local buffered/flushed offsets
+            this.observer = new Observer(1024);
         }
 
-        /**
-         * @return True if a tuple at the given depth should be added to the index.
-         * By default, one key is collected per append/reset.
-         */
-        public boolean shouldAdd(int depth, boolean last)
-        {
-            return depth == 0 && !last;
-        }
-
-        /** Increments the count of tuples since last reset by the given value. */
-        public void increment(long count)
-        {
-            this.count += count;
-        }
-
-        /** Adds a tuple at level 0: a row key. */
+        /** Adds a row key. */
         public void add(DecoratedKey key, long position)
         {
-            assert this.key == null : "Multiple keys appended per row?";
-            this.key = key;
+            this.firstKey = key;
             this.dataPosition = position;
+            observer.add(key, position);
+        }
+
+        /** Override to collect metadata at level 0: for a row. This impl drops it. */
+        public void add(long markedForDeleteAt, int localDeletionTime)
+        {
+            observer.add(markedForDeleteAt, localDeletionTime);
         }
 
         /**
-         * Adds a column name that shouldAdd requested. If shouldAdd is overridden to
-         * request column names, this method will need to be overridden to receive that data.
+         * Adds a column name.
          */
-        public void add(ByteBuffer name, long position) {}
+        public void add(ByteBuffer name, long position)
+        {
+            observer.add(name, position);
+        }
 
         /** @return Entries recorded at the given level since last reset. */
         public List<ByteBuffer> getLevel(int level)
         {
-            assert level == 0 : this.getClass() + " does not collect tuples at " + level;
-            return Collections.singletonList(key.key);
+            if (level == 0)
+                return observer.keys;
+            assert level == 1;
+            return observer.names;
         }
 
         /**
          * Appends the stored content for a row, and prepares for the next row.
-         * TODO: Once we are using a block based data file format, the unit of observation
-         * should be a block.
          */
         public void append(long dataSize) throws IOException
         {
             // assuming a single key/row per observer
             for (ByteBuffer key : getLevel(0))
                 bf.add(key);
-            estimatedRowSize.add(dataSize);
-            estimatedColumnCount.add(count);
             // append and reset
             appendToIndex();
             reset();
         }
 
         /**
-         * Appends an observer containing content for a row to the index file.
+         * IndexWriter buffers a block worth of index content before actually flushing:
+         * this method copies from the per-row buffer (the observer) to the block buffer.
          */
         protected void appendToIndex() throws IOException
         {
-            long indexPosition = indexFile.getFilePointer();
-            ByteBufferUtil.writeWithShortLength(key.key, indexFile.stream);
-            // write the position of the data to the index
-            indexFile.stream.writeLong(dataPosition);
-            if (logger.isTraceEnabled())
-                logger.trace("wrote index of " + key + " at " + indexPosition);
-            summary.maybeAddEntry(key, indexPosition);
-            builder.addPotentialBoundary(indexPosition);
+            assert firstKey != null && observer.keys.size() == 1 : "Oddly sized row: " + observer;
 
-            key = null;
-            dataPosition = -1;
+            if (summary.shouldAddEntry())
+            {
+                // the summary would like to observe a value: flush the current block
+                // so that the value to observe is the first in a new block
+                this.flush();
+                summary.addEntry(firstKey, indexFile.getFilePointer());
+                if (logger.isTraceEnabled())
+                    logger.trace("recorded summary of index for " + firstKey + " at " + indexFile.getFilePointer());
+            }
+            summary.incrementRowid();
+
+            // copy observed content into our storage
+            this.keys.addAll(observer.keys);
+            this.names.addAll(observer.names);
+            this.nameparents.copyFrom(observer.nameparents);
+            this.offsets.addAll(observer.offsets);
+            this.markedForDeleteAt.addAll(observer.markedForDeleteAt);
+            this.localDeletionTime.addAll(observer.localDeletionTime);
+            this.metaparent.copyFrom(observer.metaparent);
+
+            // reset to collect the next row
+            observer.reset(true);
+            firstKey = null;
         }
 
-        /** Flushes the state of the index writer. */
-        protected void flush() throws IOException {}
+        /** Closes the current block: this method is the inverse of NestedReader.readBlock. */
+        protected void flush() throws IOException
+        {
+            if (offsets.isEmpty())
+                return;
+            // prepare the buffer for reuse
+            outbuff.clear();
+
+            // mark the beginning of the block as a splittable position
+            long start = indexFile.getFilePointer();
+            builder.addPotentialBoundary(start);
+
+            // encode keys using the appropriate AbstractType
+            outbuff = types.get(0).compress(desc, keys, outbuff);
+            // record metadata (0 or 1 entry per key, depending on row width)
+            outbuff = LongType.encode(metaparent.asLongCollection(), outbuff);
+            outbuff = LongType.encode(new LongList(markedForDeleteAt), outbuff);
+            outbuff = LongType.encode(new LongList(localDeletionTime), outbuff);
+            // encode names
+            outbuff = LongType.encode(nameparents.asLongCollection(), outbuff);
+            outbuff = types.get(1).compress(desc, names, outbuff);
+            // encode the offsets using the LongType primitive
+            outbuff = LongType.encode(new LongList(offsets), outbuff);
+
+            // append the buffer
+            outbuff.flip();
+            ByteBufferUtil.writeWithLength(outbuff, indexFile.stream);
+            logger.debug("Wrote block of {} positions in {} bytes", offsets.size(), indexFile.getFilePointer() - start);
+            clear();
+        }
+
+        /** Clears the content of the block buffer. */
+        private void clear()
+        {
+            keys.clear();
+            names.clear();
+            nameparents.clear();
+            metaparent.clear();
+            offsets.clear();
+            markedForDeleteAt.clear();
+            localDeletionTime.clear();
+        }
 
         /**
          * Closes the index and bloomfilter, making the public state of this writer valid for consumption.
          */
         public void close() throws IOException
         {
+            flush();
+
             // bloom filter
             FileOutputStream fos = new FileOutputStream(desc.filenameFor(SSTable.COMPONENT_FILTER));
             DataOutputStream stream = new DataOutputStream(fos);
@@ -407,11 +487,29 @@ public class ChunkedWriter extends SSTableWriter
         /** Clear the stored state for the current row from the IndexWriter. */
         public void reset() throws IOException
         {
-            count = 0;
+            observer.reset(false);
         }
+
         public String toString()
         {
             return "IndexWriter(" + desc + ")";
+        }
+
+        // TODO: the point of LongCollection was to avoid boxing: need
+        // an implementation of LongList that doesn't box
+        private static final class LongList extends LongType.LongCollection
+        {
+            private final List<Long> list;
+            public LongList(List<Long> list)
+            {
+                super(list.size());
+                this.list = list;
+            }
+            
+            public long get(int i)
+            {
+                return list.get(i);
+            }
         }
     }
 }

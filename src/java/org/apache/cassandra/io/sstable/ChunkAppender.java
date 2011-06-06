@@ -47,6 +47,7 @@ class ChunkAppender
 
     private final List<AbstractType> types;
     private final ChunkedWriter.IndexWriter iwriter;
+    private final SSTableMetadata.Collector sstmc;
     private final SequentialWriter dataFile;
     // the current chunk for each level
     private final Chunk[] chunks;
@@ -58,10 +59,13 @@ class ChunkAppender
     private final long targetBlockSize;
     private long blockSize = 0;
 
-    public ChunkAppender(Descriptor desc, CFMetaData meta, SequentialWriter dataFile, ChunkedWriter.IndexWriter iwriter)
+    private long blocks = 0;
+
+    public ChunkAppender(Descriptor desc, CFMetaData meta, SequentialWriter dataFile, ChunkedWriter.IndexWriter iwriter, SSTableMetadata.Collector sstmc)
     {
         this.types = meta.getTypes();
         this.iwriter = iwriter;
+        this.sstmc = sstmc;
         this.dataFile = dataFile;
         this.chunks = new Chunk[types.size()];
         this.openType = new byte[types.size()];
@@ -79,19 +83,22 @@ class ChunkAppender
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf, Iterator<IColumn> iter) throws IOException
     {
+        if (blockSize > targetBlockSize)
+            appendAndReset();
         /** key chunk */
         addEntry(0, decoratedKey.key, Chunk.ENTRY_PARENT);
         iwriter.add(decoratedKey, dataFile.getFilePointer());
         iwriter.add(cf.getMarkedForDeleteAt(), cf.getLocalDeletionTime());
         /** child chunks */
-        addIColumns(true, true, 1, cf, iter);
+        sstmc.addColumnCount(addIColumns(true, true, 1, cf, iter));
     }
 
     /** Recursively encode IColumn instances, flushing them to disk when thresholds are reached. */
-    private void addIColumns(boolean firstForParent, boolean lastForParent, int depth, IColumnContainer container, Iterator<IColumn> iter) throws IOException
+    private int addIColumns(boolean firstForParent, boolean lastForParent, int depth, IColumnContainer container, Iterator<IColumn> iter) throws IOException
     {
         // open the metadata range at this level
         openRangeMetadata(depth, null, container);
+        int added = 0;
         boolean hasNext = iter.hasNext();
         while (hasNext)
         {
@@ -114,34 +121,32 @@ class ChunkAppender
                 }
             }
             
-            addIColumn(firstForParent, lastForParent && !hasNext, depth, icol);
+            added += addIColumn(firstForParent, lastForParent && !hasNext, depth, icol);
 
             // we've satisfied our parent's desire to flush: reset and make our own decisions
             firstForParent = false;
         }
         // the end of this parent
         closeRangeMetadata(depth, null);
+        return added;
     }
 
-    private void addIColumn(boolean firstForParent, boolean lastForParent, int depth, IColumn icol) throws IOException
+    private int addIColumn(boolean firstForParent, boolean lastForParent, int depth, IColumn icol) throws IOException
     {
         boolean isSuper = icol.getClass() == SuperColumn.class;
         addEntry(depth, icol.name(), isSuper ? Chunk.ENTRY_PARENT : Chunk.ENTRY_NAME);
         if (!isSuper)
             // standard value
-            addColumn(depth, (Column)icol);
-        else
-        {
-            // supercolumn value: recurse
-            SuperColumn scol = (SuperColumn)icol;
-            addIColumns(firstForParent, lastForParent, depth + 1, scol, scol.getSortedColumns().iterator());
-        }
+            return addColumn(depth, (Column)icol);
+        // supercolumn value: recurse
+        SuperColumn scol = (SuperColumn)icol;
+        return addIColumns(firstForParent, lastForParent, depth + 1, scol, scol.getSortedColumns().iterator());
     }
 
-    private void addColumn(int depth, Column col) throws IOException
+    private int addColumn(int depth, Column col) throws IOException
     {
         byte cm;
-        chunks[depth + 1].clientTimestampAdd(col.timestamp());
+        clientTimestampAdd(depth + 1, col.timestamp());
         ByteBuffer value;
         if (col.getClass() == Column.class)
         {
@@ -165,12 +170,19 @@ class ChunkAppender
         {
             cm = Chunk.ENTRY_COUNTER;
             CounterColumn ccol = (CounterColumn)col;
-            chunks[depth + 1].clientTimestampAdd(ccol.timestampOfLastDelete());
+            clientTimestampAdd(depth + 1, ccol.timestampOfLastDelete());
             value = ccol.value();
         }
         else
             throw new RuntimeException("FIXME: " + col.getClass() + " not implemented");
         addEntry(depth + 1, value, cm);
+        return 1;
+    }
+
+    private final void clientTimestampAdd(int depth, long clientTS)
+    {
+        sstmc.updateMaxTimestamp(clientTS);
+        chunks[depth].clientTimestampAdd(clientTS);
     }
 
     /**
@@ -187,7 +199,7 @@ class ChunkAppender
             chunks[depth].values().add(entry);
             incby = entry.remaining() + 5;
         }
-        iwriter.increment(1);
+        blockSize += incby;
         addMeta(depth, type);
     }
 
@@ -209,7 +221,7 @@ class ChunkAppender
             type = Chunk.ENTRY_RANGE_BEGIN;
             chunks[depth].values().add(start);
         }
-        chunks[depth].clientTimestampAdd(timestamp);
+        clientTimestampAdd(depth, timestamp);
         chunks[depth].localTimestampAdd(localDeletionTime);
         addMeta(depth, type);
         // record the open range
@@ -254,6 +266,7 @@ class ChunkAppender
             chunk.clear();
         }
         blockSize = 0;
+        blocks++;
         // restore any open ranges
         maybeRestoreRanges(stashed);
     }
@@ -309,6 +322,7 @@ class ChunkAppender
         // close metadata at the key level
         closeRangeMetadata(0, null);
         appendAndReset();
+        logger.info("Wrote " + blocks + " blocks with avg size " + (dataFile.getFilePointer() / blocks) + " bytes to " + dataFile);
     }
 
     /** One level of the state of a range that needed to be split across spans. */

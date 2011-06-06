@@ -671,7 +671,9 @@ public class ColumnFamilyStoreTest extends CleanupHelper
     {
         insertKey1Key2();
 
-        File backupDir = new File(DatabaseDescriptor.getDataFileLocationForTable("Keyspace2", 0), "backups");
+        final String ksname = "Keyspace2";
+        final String cfname = "Standard1";
+        File backupDir = new File(DatabaseDescriptor.getDataFileLocationForTable(ksname, 0), "backups");
 
         for (int version = 1; version <= 2; ++version)
         {
