@@ -179,4 +179,8 @@ class ThriftTester(BaseTester):
         for ks in [keyspace1, keyspace2]:
             self.client.system_add_keyspace(ks)
 
+    def nodetool(self, arg):
+        from subprocess import call
+        call(['%s/bin/nodetool' % root, '-h', 'localhost', '-p', '8090', str(arg)])
+
 # vim:ai sw=4 ts=4 tw=0 et

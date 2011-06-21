@@ -32,6 +32,7 @@ def _i64(n):
 
 _SIMPLE_COLUMNS = [Column('c1', 'value1', 0),
                    Column('c2', 'value2', 0)]
+_MANY_COLUMNS = [Column('%09d' % x, 'val%09d' % x, 0) for x in xrange(0, 50000)]
 _SUPER_COLUMNS = [SuperColumn(name='sc1', columns=[Column(_i64(4), 'value4', 0)]),
                   SuperColumn(name='sc2', columns=[Column(_i64(5), 'value5', 0),
                                                    Column(_i64(6), 'value6', 0)])]
@@ -60,6 +61,11 @@ def _insert_simple(block=True):
 
 def _insert_batch(block):
    return _insert_multi_batch(['key1'], block)
+
+def _insert_wide(keys):
+    cfmap = {'Standard1': [Mutation(ColumnOrSuperColumn(c)) for c in _MANY_COLUMNS]}
+    for key in keys:
+        client.batch_mutate({key: cfmap}, ConsistencyLevel.ONE)
 
 def _insert_multi(keys):
     CL = ConsistencyLevel.ONE
@@ -1127,6 +1133,29 @@ class TestMutations(ThriftTester):
         result = client.get_slice('key1', ColumnParent('Super1', 'sc1'), p, ConsistencyLevel.ONE) 
         assert len(result) == 1
         assert result[0].column.name == _i64(4)
+
+    def test_wide_slices(self):
+        key = 'test_wide_slices'
+        _set_keyspace('Keyspace1')
+        _insert_wide([key])
+        def run_wide():
+            for width in xrange(10, 1000, 100):
+                for start in xrange(0, len(_MANY_COLUMNS), 1000):
+                    end = min(start + width, len(_MANY_COLUMNS)) - 1
+                    # inclusive range
+                    expectedLen = end - start + 1
+                    startName = _MANY_COLUMNS[start].name
+                    endName = _MANY_COLUMNS[end].name
+                    p = SlicePredicate(slice_range=SliceRange(startName, endName, False, 2*width))
+                    result = client.get_slice(key, ColumnParent('Standard1'), p, ConsistencyLevel.ONE)
+                    assert len(result) == expectedLen, 'startName=%s, endName=%s, actual=%d' % (startName, endName, len(result))
+        run_wide()
+        self.nodetool('flush')
+        run_wide()
+        _insert_wide([key])
+        self.nodetool('flush')
+        self.nodetool('compact')
+        run_wide()
 
     def test_multiget_slice(self):
         """Insert multiple keys and retrieve them using the multiget_slice interface"""
