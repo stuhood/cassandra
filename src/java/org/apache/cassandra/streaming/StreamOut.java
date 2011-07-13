@@ -149,6 +149,7 @@ public class StreamOut
         {
             Descriptor desc = sstable.descriptor;
             List<Pair<Long,Long>> sections = sstable.getPositionsForRanges(ranges);
+            logger.warn("Streaming " + sections + " (of " + sstable.length() + ") for " + ranges + " in " + sstable);
             if (sections.isEmpty())
             {
                 // A reference was acquired on the sstable and we won't stream it

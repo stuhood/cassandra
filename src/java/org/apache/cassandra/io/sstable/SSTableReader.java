@@ -301,6 +301,7 @@ public abstract class SSTableReader extends SSTable
     {
         long sampleKeyCount = 0;
         List<Pair<Integer, Integer>> sampleIndexes = getSampleIndexesForRanges(indexSummary.getIndexPositions(), ranges);
+        logger.warn("index sample ranges for key estimation: " + sampleIndexes);
         for (Pair<Integer, Integer> sampleIndexRange : sampleIndexes)
             sampleKeyCount += (sampleIndexRange.right - sampleIndexRange.left + 1);
         return Math.max(1, sampleKeyCount * DatabaseDescriptor.getIndexInterval());
@@ -326,6 +327,8 @@ public abstract class SSTableReader extends SSTable
         List<Pair<Integer,Integer>> positions = new ArrayList<Pair<Integer,Integer>>();
         if (samples.isEmpty())
             return positions;
+
+        logger.warn("computing index samples for normalized ranges: " + AbstractBounds.normalize(ranges) + " in samples: " + samples);
 
         for (AbstractBounds range : AbstractBounds.normalize(ranges))
         {

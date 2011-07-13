@@ -115,6 +115,7 @@ class ChunkAppender
                 else if (!firstForParent && blockSize > targetBlockSize)
                 {
                     // if we have some content for this parent, and we're past the threshold, we should flush first
+                    System.out.println("splitting a block! " + blockSize);
                     appendAndReset();
                     iwriter.add(icol.name(), dataFile.getFilePointer());
                     firstForParent = true;

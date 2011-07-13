@@ -47,7 +47,7 @@ public class CompactionsPurgeTest extends CleanupHelper
 {
     public static final String TABLE1 = "Keyspace1";
     public static final String TABLE2 = "Keyspace2";
-
+/*
     @Test
     public void testMajorCompactionPurge() throws IOException, ExecutionException, InterruptedException
     {
@@ -232,7 +232,7 @@ public class CompactionsPurgeTest extends CleanupHelper
         for (IColumn c : cf)
             assert !c.isMarkedForDelete();
     }
-
+*/
     @Test
     public void testCompactionPurgeTombstonedRow() throws IOException, ExecutionException, InterruptedException
     {
@@ -247,21 +247,25 @@ public class CompactionsPurgeTest extends CleanupHelper
         RowMutation rm;
 
         // inserts
+        System.out.println("1111111111111111111111111111111111111111");
         rm = new RowMutation(tableName, key.key);
         for (int i = 0; i < 10; i++)
         {
             rm.add(new QueryPath(cfName, null, ByteBufferUtil.bytes(String.valueOf(i))), ByteBufferUtil.EMPTY_BYTE_BUFFER, i);
         }
         rm.apply();
+        System.out.println("2222222222222222222222222222222222222222");
 
         // deletes row with timestamp such that not all columns are deleted
         rm = new RowMutation(tableName, key.key);
         rm.delete(new QueryPath(cfName, null, null), 4);
         rm.apply();
+        System.out.println("3333333333333333333333333333333333333333");
 
         // flush and major compact (with tombstone purging)
         cfs.forceBlockingFlush();
         Util.compactAll(cfs).get();
+        System.out.println("4444444444444444444444444444444444444444");
 
         // re-inserts with timestamp lower than delete
         rm = new RowMutation(tableName, key.key);
@@ -270,14 +274,16 @@ public class CompactionsPurgeTest extends CleanupHelper
             rm.add(new QueryPath(cfName, null, ByteBufferUtil.bytes(String.valueOf(i))), ByteBufferUtil.EMPTY_BYTE_BUFFER, i);
         }
         rm.apply();
+        System.out.println("5555555555555555555555555555555555555555");
 
         // Check that the second insert did went in
         ColumnFamily cf = cfs.getColumnFamily(QueryFilter.getIdentityFilter(key, new QueryPath(cfName)));
+        System.out.println("6666666666666666666666666666666666666666");
         assertEquals(10, cf.getColumnCount());
         for (IColumn c : cf)
             assert !c.isMarkedForDelete();
     }
-
+/*
     @Test
     public void testCompactionPurgeTombstonedSuperColumn() throws IOException, ExecutionException, InterruptedException
     {
@@ -324,4 +330,5 @@ public class CompactionsPurgeTest extends CleanupHelper
         assert sc != null;
         assertEquals(10, sc.getColumnCount());
     }
+    */
 }

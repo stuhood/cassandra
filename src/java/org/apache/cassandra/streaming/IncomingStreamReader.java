@@ -111,6 +111,8 @@ public class IncomingStreamReader
         {
             BytesReadTracker in = new BytesReadTracker(input);
 
+            System.out.println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+            System.out.println("on-the-fly-rebuild for " + localFile + "|" + localFile.sections);
             for (Pair<Long, Long> section : localFile.sections)
             {
                 long length = section.right - section.left;
@@ -155,6 +157,7 @@ public class IncomingStreamReader
                     remoteFile.progress += in.getBytesRead();
                 }
             }
+            System.out.println("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
             return writer.closeAndOpenReader();
         }
         finally

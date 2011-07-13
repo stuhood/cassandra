@@ -39,6 +39,7 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implements IColumnIterator
@@ -68,6 +69,7 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
         this.key = key;
 
         List<BlockHeader> headers = sstable.getPositions(key, SSTableReader.Operator.EQ);
+        System.out.println("headers for " + this + ": " + headers);
         if (headers == null)
             return;
         // filter headers to decide which blocks to visit
@@ -120,6 +122,9 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
         this.sstable = sstable;
         this.file = file;
         this.cursor = cursor;
+
+        System.out.println("New iterator from existing cursor " + cursor);
+
         read();
     }
 
@@ -209,10 +214,14 @@ public class ChunkedNamesIterator extends SimpleAbstractColumnIterator implement
         {
             // -1 if we reached a sentinel, 0 for a match, 1 for a miss
             if (cursor.searchAt(1, column) > 0)
+            {
+                System.out.println("\tmissed for " + ByteBufferUtil.string(column));
                 // not found
                 continue;
+            }
             // else, either sentinel or column
             byte m = cursor.peekAt(1, columns.last());
+            System.out.println("\tmatched type " + m);
             switch (m)
             {
                 case Chunk.ENTRY_NAME:

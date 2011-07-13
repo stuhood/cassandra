@@ -172,6 +172,8 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
             {
                 if (row != null)
                 {
+                    System.out.println("Closing row with " + cursor);
+                    // consume the row to position ourselves at its end
                     row.close();
                     row = null;
                 }
@@ -190,6 +192,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
             prepared = false;
             try
             {
+                System.out.println("Opening new row +++++++++++++++++++++++++++++++");
                 if (filter != null)
                     return row = filter.getSSTableColumnIterator(sstable, file, cursor);
                 return row = SSTableIdentityIterator.create(sstable, file, cursor, false);

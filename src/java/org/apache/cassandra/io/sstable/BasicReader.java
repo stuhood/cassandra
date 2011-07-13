@@ -101,15 +101,18 @@ public class BasicReader extends SSTableReader
 
     public List<Pair<Long,Long>> getPositionsForRanges(Collection<Range> ranges)
     {
+        logger.warn("positionsForRanges in " + this + " with samples " + indexSummary.getIndexPositions());
         // use the index to determine a minimal section for each range
         List<Pair<Long,Long>> positions = new ArrayList<Pair<Long,Long>>();
         for (AbstractBounds range : AbstractBounds.normalize(ranges))
         {
             BlockHeader left = getPosition(new DecoratedKey(range.left, null), Operator.GT);
+            logger.warn("\tl:" + left);
             if (left == null)
                 // left is past the end of the file
                 continue;
             BlockHeader right = getPosition(new DecoratedKey(range.right, null), Operator.GT);
+            logger.warn("\t\tr:" + left);
             long rightPos = right != null && !Range.isWrapAround(range.left, range.right) ?
                 right.position() :
                 // right is past the end of the file, or it wraps

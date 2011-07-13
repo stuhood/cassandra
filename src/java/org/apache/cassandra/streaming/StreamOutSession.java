@@ -134,8 +134,13 @@ public class StreamOutSession
     /** convenience method for use when testing */
     void await() throws InterruptedException
     {
+        int i = 10;
         while (streams.containsKey(context))
-            Thread.sleep(10);
+        {
+            Thread.sleep(1000);
+            if (i-- < 0)
+                throw new RuntimeException("Too bloody long! " + streams);
+        }
     }
 
     public Collection<PendingFile> getFiles()

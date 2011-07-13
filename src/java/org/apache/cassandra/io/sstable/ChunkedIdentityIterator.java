@@ -178,6 +178,7 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
         if (!hasNext())
             throw new java.util.NoSuchElementException();
         available = false;
+        System.out.println("get!");
         return cursor.getColumn();
     }
 
@@ -188,6 +189,7 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
 
     public final void close() throws IOException
     {
+        System.out.println("closing " + this);
         // consume the remainder of this row
         outer: while (true)
         {

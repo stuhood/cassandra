@@ -40,6 +40,7 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -84,6 +85,7 @@ public class ChunkedSliceIterator implements IColumnIterator
         List<BlockHeader> headers = sstable.getPositions(key, SSTableReader.Operator.EQ);
         if (headers == null)
             return;
+        System.out.println("Slicing on " + key);
         if (headers.get(0).isMetadataSet())
         {
             // apply metadata from the index
@@ -96,8 +98,19 @@ public class ChunkedSliceIterator implements IColumnIterator
             for (BlockHeader header : headers)
             {
                 if (header.min() == null)
+                {
                     // the row is a tombstone, and we've gotten the metadata: finished.
+                    System.out.println("\ttombstone");
                     return;
+                }
+                try
+                {
+                    System.out.println("\t" + ByteBufferUtil.string(header.min()) + ", " + ByteBufferUtil.string(header.max()));
+                }
+                catch (Exception e)
+                {
+                    // pass
+                }
                 if (finishColumn.remaining() > 0 && c.compare(finishColumn, header.min()) < 0)
                     // the minimum column in this row is greater than the queries' max
                     continue;

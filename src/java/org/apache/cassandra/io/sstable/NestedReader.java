@@ -288,6 +288,25 @@ public class NestedReader extends SSTableReader
         // decode the offsets using the LongType primitive
         long[] offsets = LongType.decode(inbuff);
         
+
+        
+        /*
+        System.out.println("block " + from);
+        for (Collection<ByteBuffer> nlist : Arrays.asList(keysout, names))
+        {
+            ArrayList<String> stringz = new ArrayList<String>();
+            for (ByteBuffer name : nlist)
+                // assuming strings
+                stringz.add(ByteBufferUtil.string(name));
+            System.out.println("\t" + stringz);
+        }
+        System.out.println("\t" + Arrays.toString(offsets));
+        System.out.println("\tm " + Arrays.toString(markedForDeleteAt));
+        System.out.println("\tl " + Arrays.toString(localDeletionTime));
+        */
+
+
+
         /**
          * reconstruct positions using the keys, parent flags and offsets: runs of equal parent
          * bits are entries for a particular parent. example: 1 consecutive parent bit represents a
@@ -304,6 +323,7 @@ public class NestedReader extends SSTableReader
             int metaend = (int)metaparent.endOfRun(metastart);
             int namerunlength = offsetend - offsetstart;
             int metarunlength = metaend - metastart;
+            // System.out.println("Adding: nl=" + namerunlength + " ml=" + metarunlength + " o=" + offsetstart + " m=" + metaidx);
             if (namerunlength == 1 && metarunlength == 1)
                 // narrow/unobserved row: one offset, no metadata, no names
                 headout.add(Collections.<BlockHeader>singletonList(new BlockHeader(offsets[offsetstart])));

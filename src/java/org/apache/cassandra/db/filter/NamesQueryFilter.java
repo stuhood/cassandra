@@ -21,6 +21,7 @@ package org.apache.cassandra.db.filter;
  */
 
 
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -37,6 +38,7 @@ import org.apache.cassandra.io.sstable.Cursor;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class NamesQueryFilter implements IFilter
 {
@@ -45,6 +47,15 @@ public class NamesQueryFilter implements IFilter
     public NamesQueryFilter(SortedSet<ByteBuffer> columns)
     {
         this.columns = columns;
+        try
+        {
+            for (ByteBuffer column : columns)
+                System.err.println("for " + ByteBufferUtil.string(column) + " " + column.remaining());
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
     }
 
     public NamesQueryFilter(ByteBuffer column)

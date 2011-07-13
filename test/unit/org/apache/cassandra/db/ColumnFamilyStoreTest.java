@@ -68,7 +68,7 @@ public class ColumnFamilyStoreTest extends CleanupHelper
         random.nextBytes(bytes1);
         random.nextBytes(bytes2);
     }
-
+/*
     @Test
     // create two sstables, and verify that we only deserialize data from the most recent one
     public void testTimeSortedQuery() throws IOException, ExecutionException, InterruptedException
@@ -649,7 +649,7 @@ public class ColumnFamilyStoreTest extends CleanupHelper
         cfs.forceBlockingFlush();
         assertRowAndColCount(1, 2, null, true, cfs.getRangeSlice(null, Util.range("f", "g"), 100, QueryFilter.getFilter(sp, cfs.getComparator())));
     }
-        
+        */
 
     private ColumnFamilyStore insertKey1Key2() throws IOException, ExecutionException, InterruptedException
     {
@@ -666,6 +666,7 @@ public class ColumnFamilyStoreTest extends CleanupHelper
         return Util.writeColumnFamily(rms);
     }
     
+    /*
     @Test
     public void testBackupAfterFlush() throws Throwable
     {
@@ -682,4 +683,5 @@ public class ColumnFamilyStoreTest extends CleanupHelper
                 assertTrue("can not find backedup file:" + desc.filenameFor(c), new File(desc.filenameFor(c)).exists());
         }
     }
+    */
 }

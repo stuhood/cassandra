@@ -60,9 +60,11 @@ public class RowIterationTest extends CleanupHelper
             inserted.add(key);
         }
         store.forceBlockingFlush();
+        System.out.println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
         assertEquals(inserted.toString(), inserted.size(), Util.getRangeSlice(store).size());
     }
 
+    /*
     @Test
     public void testRowIterationDeletionTime() throws IOException, ExecutionException, InterruptedException
     {
@@ -109,4 +111,5 @@ public class RowIterationTest extends CleanupHelper
         ColumnFamily cf = Util.getRangeSlice(store).iterator().next().cf;
         assert cf != null;
     }
+    */
 }

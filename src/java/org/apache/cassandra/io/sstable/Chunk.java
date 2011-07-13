@@ -27,6 +27,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.nio.ByteBuffer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.io.util.SequentialWriter;
@@ -39,6 +42,8 @@ import org.apache.cassandra.utils.MurmurHash;
  */
 public final class Chunk
 {
+    private static Logger logger = LoggerFactory.getLogger(Chunk.class);
+
     public static final byte ENTRY_NULL = 0x0;
     public static final byte ENTRY_NAME = 0x1;
     public static final byte ENTRY_PARENT = 0x2;
@@ -216,9 +221,15 @@ public final class Chunk
         decoded = true;
     }
 
+    long APPEND_COUNT = 0;
+    long TOTAL_COUNT = 0;
+    long NEXT_COUNT = 0;
+    long TOTAL_SIZE = 0;
+
     /** Chunks will usually be appended a span at a time: see ChunkAppender. */
     void append(SequentialWriter file) throws IOException
     {
+        int START;
         /** encode into a single output buffer */
         if (encoded == null)
             encoded = ByteBuffer.allocate(ENTRIES << 3);
@@ -226,12 +237,19 @@ public final class Chunk
             encoded.clear();
         // metadata
         metadata.flip();
+        int METASIZE = metadata.remaining();
         encoded = ByteBufferUtil.ensureRemaining(encoded, metadata.remaining(), false);
         encoded.putInt(metadata.remaining());
         encoded.put(metadata);
         // values
+        int VPRE = 0;
+        for (ByteBuffer decodedValue : decodedValues)
+            VPRE += decodedValue.remaining();
+        START = encoded.position();
         encoded = type.compress(desc, decodedValues, encoded);
+        int VPOST = encoded.position() - START;
         // client timestamps (with nulls)
+        START = encoded.position();
         encoded = LongType.encode(clientTimestampNulls.asLongCollection(), encoded);
         encoded = LongType.encode(new LongType.LongCollection(clientTimestamps.size())
         {
@@ -240,6 +258,8 @@ public final class Chunk
                 return clientTimestamps.get(i);
             }
         }, encoded);
+        int CTSSIZE = encoded.position() - START;
+        START = encoded.position();
         // local timestamps (upcast to longs, with nulls)
         encoded = LongType.encode(localTimestampNulls.asLongCollection(), encoded);
         encoded = LongType.encode(new LongType.LongCollection(localTimestamps.size())
@@ -249,6 +269,16 @@ public final class Chunk
                 return localTimestamps.get(i);
             }
         }, encoded);
+        int LTSSIZE = encoded.position() - START;
+
+        TOTAL_COUNT += decodedValues.size();
+        TOTAL_SIZE += VPOST;
+        APPEND_COUNT++;
+        if (TOTAL_COUNT > NEXT_COUNT)
+        {
+            logger.info(type.getClass().getSimpleName() + " appends: " + APPEND_COUNT + " avg_count: " + (TOTAL_COUNT / APPEND_COUNT) + " avg_size: " + (TOTAL_SIZE/TOTAL_COUNT));
+            NEXT_COUNT = TOTAL_COUNT + (1024 * decodedValues.size());
+        }
 
         /** write magic, flush, and append checksum */
         encoded.flip();

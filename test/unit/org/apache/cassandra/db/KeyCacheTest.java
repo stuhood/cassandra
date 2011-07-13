@@ -46,6 +46,7 @@ public class KeyCacheTest extends CleanupHelper
     private static final String COLUMN_FAMILY2 = "Standard2";
     private static final String COLUMN_FAMILY3 = "Standard3";
 
+    /*
     @Test
     public void testKeyCache50() throws IOException, ExecutionException, InterruptedException
     {
@@ -57,6 +58,7 @@ public class KeyCacheTest extends CleanupHelper
     {
         testKeyCache(COLUMN_FAMILY2, 128);
     }
+    */
 
     @Test
     public void testKeyCacheLoad() throws Exception
@@ -74,7 +76,16 @@ public class KeyCacheTest extends CleanupHelper
         store.forceBlockingFlush();
 
         // populate the cache
-        readData(TABLE1, COLUMN_FAMILY3, 0, 100);
+        Thread.sleep(500);
+        System.out.println(">>>>>>>>>>>>>>>>");
+        try
+        {
+            readData(TABLE1, COLUMN_FAMILY3, 0, 100);
+        }
+        finally
+        {
+            System.out.println("<<<<<<<<<<<<<<<<");
+        }
         assertEquals(100, store.getKeyCacheSize());
 
         // really? our caches don't implement the map interface? (hence no .addAll)

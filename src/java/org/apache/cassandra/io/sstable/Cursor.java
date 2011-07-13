@@ -122,6 +122,7 @@ public final class Cursor
     /** @return Key read from the first chunk and validated against @key if non-null */
     public DecoratedKey getKey(final IPartitioner p, DecoratedKey key)
     {
+        System.out.println("searching for key " + key + " pre: " + this);
         byte keyMeta = getMeta(keyDepth());
         assert keyMeta == Chunk.ENTRY_PARENT :
             "Bad row key metadata '" + keyMeta + "' in " + this;
@@ -129,7 +130,7 @@ public final class Cursor
             return p.decorateKey(getVal(keyDepth()));
 
         // TODO: this is not fun: should hold an AbstractType per partitioner
-        int res = searchAt(0, key.key, new Comparator<ByteBuffer>()
+        int res = searchAt(keyDepth(), key.key, new Comparator<ByteBuffer>()
         {
             public int compare(ByteBuffer b1, ByteBuffer b2)
             {
@@ -138,6 +139,7 @@ public final class Cursor
                 return b1.equals(b2) ? 0 : -1;
             }
         });
+        System.out.println("\tpost: " + this);
         ByteBuffer actual = getVal(keyDepth());
         assert actual.equals(key.key) : "Positioned at the wrong row! expected: " + key + " actual: " + p.decorateKey(actual);
         return key;
@@ -192,12 +194,16 @@ public final class Cursor
      */
     private Column getStandard()
     {
+        //System.out.println("\nGetting column from " + cursor);
         byte nm = getMeta(nameDepth());
         ByteBuffer name;
         if (nm == Chunk.ENTRY_NAME)
             name = getVal(nameDepth());
         else
             throw new AssertionError("Invalid type for column name: " + nm);
+        //System.out.println("\tGetting name from chunk: " + chunks[nameDepth()]);
+        //System.out.println("\tGot name from " + cursor);
+        //System.out.println("\tGetting value from chunk: " + chunks[valueDepth()]);
         byte cm = getMeta(valueDepth());
         Column col = null;
         switch (cm)
@@ -288,8 +294,17 @@ public final class Cursor
      */
     public void nextSpan(DataInput file) throws IOException
     {
+        System.out.println("nextSpan " + file);
         for (int i = 0; i < chunks.length; i++)
             chunks[i].next(file);
+        for (List<ByteBuffer> nlist : Arrays.asList(chunks[0].values(), chunks[1].values()))
+        {
+            ArrayList<String> stringz = new ArrayList<String>();
+            for (ByteBuffer name : nlist)
+                // assuming strings
+                stringz.add(ByteBufferUtil.string(name));
+            System.out.println("\t" + stringz);
+        }
         Arrays.fill(this.meta, 0);
         Arrays.fill(this.val, 0);
         Arrays.fill(this.client, 0);
@@ -309,6 +324,7 @@ public final class Cursor
 
         ByteBuffer metadata = chunks[depth].metadata();
         byte m = metadata.get(metadata.position() + meta[depth]);
+        System.out.println("is " + this + " positioned at a sentinel at " + depth + "? " + m);
         if (isSentinel(m))
             // reached end of parent: no point in comparing
             return m;
@@ -340,8 +356,10 @@ public final class Cursor
         // sequential search for a value, bounded by a sentinel
         while (!isSentinelAt(depth))
         {
+            // System.out.println("\t\tvalueSearch m=" + midx[depth] + ", v=" + vidx[depth] + " of " + maxVidx);
             // compare to current value
             ByteBuffer cur = chunks[depth].values().get(val[depth]);
+            //System.out.println("\t\tComparing to" + new String(cur.array()));
             int comp = comparator.compare(cur, value);
             if (comp < 0)
             {
@@ -387,12 +405,21 @@ public final class Cursor
         }
     }
 
+    private String tabs(int count)
+    {
+        StringBuilder buff = new StringBuilder();
+        for (int i = 0; i < count; i++)
+            buff.append("    ");
+        return buff.toString();
+    }
+
     /**
      * Recursively skips all content for one entry at depth.
      */
     public void skipAt(int depth)
     {
         byte m = getMeta(depth, meta[depth]++);
+        //System.out.println(tabs(depth) + "Skipping: m" + m + " v" + val[depth]);
         switch (m)
         {
             case Chunk.ENTRY_NAME:
@@ -486,7 +513,17 @@ public final class Cursor
     private int getLocal(int depth)
     {
         if (chunks[depth].localTimestampNulls().get(localNulls[depth]++))
-            return chunks[depth].localTimestamps().get(local[depth]++);
+        {
+            try
+            {
+                return chunks[depth].localTimestamps().get(local[depth]++);
+            }
+            catch (Throwable e)
+            {
+                System.out.println("uh oh at " + depth + ": " + localNulls[depth] + "/" + chunks[depth].localTimestampNulls().index() + ", " + chunks[depth].localTimestamps());
+                throw new RuntimeException(e);
+            }
+        }
         return Integer.MIN_VALUE;
     }
 

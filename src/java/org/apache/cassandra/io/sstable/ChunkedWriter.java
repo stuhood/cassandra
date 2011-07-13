@@ -347,6 +347,7 @@ public class ChunkedWriter extends SSTableWriter
             this.firstKey = key;
             this.dataPosition = position;
             observer.add(key, position);
+            System.out.println("++" + key + " at " + position);
         }
 
         /** Override to collect metadata at level 0: for a row. This impl drops it. */
@@ -361,6 +362,14 @@ public class ChunkedWriter extends SSTableWriter
         public void add(ByteBuffer name, long position)
         {
             observer.add(name, position);
+            try
+            {
+                System.out.println("\t++" + ByteBufferUtil.string(name) + " at " + position);
+            }
+            catch (Exception e)
+            {
+                // pass
+            }
         }
 
         /** @return Entries recorded at the given level since last reset. */
