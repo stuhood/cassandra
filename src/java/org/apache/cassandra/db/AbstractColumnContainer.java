@@ -59,15 +59,25 @@ public abstract class AbstractColumnContainer implements IColumnContainer, IIter
 
     public void delete(AbstractColumnContainer cc2)
     {
+        delete(cc2.deletionInfo.get());
+    }
+
+    public void delete(DeletionInfo cc2Info)
+    {
         // Keeping deletion info for max markedForDeleteAt value
         DeletionInfo current;
-        DeletionInfo cc2Info = cc2.deletionInfo.get();
         while (true)
         {
              current = deletionInfo.get();
              if (current.markedForDeleteAt >= cc2Info.markedForDeleteAt || deletionInfo.compareAndSet(current, cc2Info))
                  break;
         }
+    }
+
+    /** If the given deletion times are more recent than the existing timestamps, update them. */
+    public void markForDeleteAt(int localtime, long timestamp)
+    {
+        delete(new DeletionInfo(timestamp, localtime));
     }
 
     public boolean isMarkedForDelete()

@@ -43,7 +43,7 @@ import static org.apache.cassandra.io.sstable.Component.separator;
 public class Descriptor
 {
     public static final String LEGACY_VERSION = "a"; // "pre-history"
-    public static final String CURRENT_VERSION = "h";
+    public static final String CURRENT_VERSION = "ha";
     public static final Map<String,Version> VERSIONS;
     static
     {
@@ -63,6 +63,8 @@ public class Descriptor
         builder.put("g", new Version("g", "00000011"));
         // h (1.0): tracks max client timestamp in metadata component
         builder.put("h", new Version("h", "00000011"));
+        // ha (1.0+): type specific data and index file compression
+        builder.put("ha", new Version("ha", "00000001"));
         VERSIONS = builder.build();
     };
 

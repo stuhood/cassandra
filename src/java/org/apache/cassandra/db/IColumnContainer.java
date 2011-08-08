@@ -45,6 +45,7 @@ public interface IColumnContainer
     public boolean isMarkedForDelete();
     public long getMarkedForDeleteAt();
     public int getLocalDeletionTime();
+    public void markForDeleteAt(int localDeleteTime, long markedForDeleteAt);
 
     public AbstractType getComparator();
 

@@ -459,6 +459,11 @@ public class CompactionManager implements CompactionManagerMBean
 
     private void scrubOne(ColumnFamilyStore cfs, SSTableReader sstable) throws IOException
     {
+        if (sstable.descriptor.version.isRowIndexed)
+        {
+            logger.warn("FIXME: Scrub not implemented for " + sstable.descriptor);
+            return;
+        }
         logger.info("Scrubbing " + sstable);
         CompactionController controller = new CompactionController(cfs, Collections.singletonList(sstable), getDefaultGcBefore(cfs), true);
         boolean isCommutative = cfs.metadata.getDefaultValidator().isCommutative();

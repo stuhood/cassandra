@@ -85,11 +85,17 @@ public abstract class SSTableWriter extends SSTable
                                        SSTableMetadata.Collector sstableMetadataCollector) throws IOException
     {
         Descriptor desc = Descriptor.fromFilename(filename);
-        return new RowIndexedWriter(desc,
-                                    keyCount,
-                                    metadata,
-                                    partitioner,
-                                    sstableMetadataCollector);
+        return desc.version.isRowIndexed ?
+            new RowIndexedWriter(desc,
+                                 keyCount,
+                                 metadata,
+                                 partitioner,
+                                 sstableMetadataCollector) :
+            new ChunkedWriter(desc,
+                              keyCount,
+                              metadata,
+                              partitioner,
+                              sstableMetadataCollector);
     }
 
     public abstract void mark() throws IOException;
