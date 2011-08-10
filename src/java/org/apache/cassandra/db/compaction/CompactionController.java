@@ -127,17 +127,11 @@ public class CompactionController
         if (rows.size() == 1 && !needDeserialize() && !shouldPurge(rows.get(0).getKey()))
             return new EchoedRow(this, rows.get(0));
 
-        long rowSize = 0;
+        long limit = DatabaseDescriptor.getInMemoryCompactionLimit() / rows.size();
+        // if any row cannot be buffered into memory, use lazy compaction
         for (SSTableIdentityIterator row : rows)
-            rowSize += row.dataSize;
-
-        if (rowSize > DatabaseDescriptor.getInMemoryCompactionLimit())
-        {
-            String keyString = cfs.metadata.getKeyValidator().getString(rows.get(0).getKey().key);
-            logger.info(String.format("Compacting large row %s/%s:%s (%d bytes) incrementally",
-                                      cfs.table.name, cfs.columnFamily, keyString, rowSize));
-            return new LazilyCompactedRow(this, rows);
-        }
+            if (!row.isBufferable(limit))
+                return new LazilyCompactedRow(this, rows);
         return new PrecompactedRow(this, rows);
     }
 

@@ -178,7 +178,7 @@ public class LazilyCompactedRow extends AbstractCompactedRow
     {
         int n = 0;
         for (SSTableIdentityIterator row : rows)
-            n += row.columnCount;
+            n += row.getEstimatedColumnCount();
         return n;
     }
 

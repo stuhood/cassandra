@@ -521,7 +521,7 @@ public class CompactionManager implements CompactionManagerMBean
                     writer.mark();
                     try
                     {
-                        SSTableIdentityIterator row = new SSTableIdentityIterator(sstable, dataFile, true);
+                        SSTableIdentityIterator row = SSTableIdentityIterator.create(sstable, dataFile, true);
                         if (row.getKey() == null)
                             throw new IOError(new IOException("Unable to read row key from data file"));
                         AbstractCompactedRow compactedRow = controller.getCompactedRow(row);

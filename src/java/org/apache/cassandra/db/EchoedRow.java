@@ -32,8 +32,7 @@ import org.apache.cassandra.db.compaction.CompactionController;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 
 /**
- * A CompactedRow implementation that just echos the original row bytes without deserializing.
- * Currently only used by cleanup.
+ * A CompactedRow implementation that just echoes the original row bytes without deserializing.
  */
 public class EchoedRow extends AbstractCompactedRow
 {
@@ -56,10 +55,8 @@ public class EchoedRow extends AbstractCompactedRow
 
     public long write(DataOutput out) throws IOException
     {
-        assert row.dataSize > 0;
-        out.writeLong(row.dataSize);
         row.echoData(out);
-        return row.dataSize;
+        return row.getDataSize();
     }
 
     public void update(MessageDigest digest)
@@ -75,7 +72,7 @@ public class EchoedRow extends AbstractCompactedRow
 
     public int columnCount()
     {
-        return row.columnCount;
+        return row.getColumnCount();
     }
 
     public long maxTimestamp()

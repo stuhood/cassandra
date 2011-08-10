@@ -169,8 +169,7 @@ public class SSTableScanner implements CloseableIterator<IColumnIterator>
             {
                 if (filter != null)
                     return row = filter.getSSTableColumnIterator(sstable, file);
-                long start = file.getFilePointer();
-                return row = new SSTableIdentityIterator(sstable, file, false);
+                return row = SSTableIdentityIterator.create(sstable, file, false);
             }
             catch (IOException e)
             {

@@ -118,7 +118,7 @@ public class IncomingStreamReader
                 {
                     in.reset(0);
 
-                    SSTableIdentityIterator iter = new SSTableIdentityIterator(cfs.metadata, StorageService.getPartitioner(), localFile.desc, in, true);
+                    SSTableIdentityIterator iter = SSTableIdentityIterator.create(cfs.metadata, StorageService.getPartitioner(), localFile.desc, in, true);
                     AbstractCompactedRow row = controller.getCompactedRow(iter);
                     writer.append(row);
                     // row append does not update the max timestamp on its own
