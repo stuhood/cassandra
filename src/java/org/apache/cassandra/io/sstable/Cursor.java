@@ -54,7 +54,7 @@ public final class Cursor
     private final int[] clientNulls;
 
     private final boolean fromRemote;
-    private final int time = (int)(System.currentTimeMillis() / 1000);
+    private final int time;
 
     public Cursor(Descriptor desc, List<AbstractType> types)
     {
@@ -65,6 +65,7 @@ public final class Cursor
     {
         this.chunks = new Chunk[types.size()];
         this.fromRemote = fromRemote;
+        this.time = (int)(System.currentTimeMillis() / 1000);
         // the index in the last 2 chunks is always the same
         for (int i = 0; i < types.size(); i++)
             this.chunks[i] = new Chunk(desc, types.get(i));
@@ -78,6 +79,25 @@ public final class Cursor
             Arrays.fill(arr, -1);
     }
     
+    /**
+     * Shallow copy constructor: to perform a deep copy, create a shallow copy, and then call reset.
+     */
+    public Cursor(Cursor that)
+    {
+        this.fromRemote = that.fromRemote;
+        this.time = that.time;
+
+        this.meta = (int[])that.meta.clone();
+        this.val = (int[])that.val.clone();
+        this.local = (int[])that.local.clone();
+        this.localNulls = (int[])that.localNulls.clone();
+        this.client = (int[])that.client.clone();
+        this.clientNulls = (int[])that.clientNulls.clone();
+
+        // shallow copy the Chunks
+        this.chunks = (Chunk[])that.chunks.clone();
+    }
+
     public int keyDepth()
     {
         return 0;
@@ -104,7 +124,7 @@ public final class Cursor
     {
         byte keyMeta = getMeta(keyDepth());
         assert keyMeta == Chunk.ENTRY_PARENT :
-            "Bad row key metadata in " + this;
+            "Bad row key metadata '" + keyMeta + "' in " + this;
         if (key == null)
             return p.decorateKey(getVal(keyDepth()));
 
@@ -464,6 +484,35 @@ public final class Cursor
     {
         for (Chunk chunk : chunks)
             chunk.clear();
+    }
+
+    /**
+     * Deep copy that cursor into this cursor: this Cursor must already be a
+     * shallow clone of that cursor.
+     * TODO: this is necessary to support 'reset' on ChunkedIdentityIterator, but
+     * anything we can do to optimize it away would be fantastic: in particular,
+     * when we no longer need to support two pass compaction, we can remove
+     * SSTableIdentityIterator.reset() and both copy-related methods on Cursor.
+     */
+    public Cursor reset(Cursor that)
+    {
+        assert this.time == that.time && this.fromRemote == that.fromRemote;
+        intCopy(that.meta, this.meta);
+        intCopy(that.val, this.val);
+        intCopy(that.local, this.local);
+        intCopy(that.localNulls, this.localNulls);
+        intCopy(that.client, this.client);
+        intCopy(that.clientNulls, this.clientNulls);
+        assert this.chunks.length == that.chunks.length;
+        for (int i = 0; i < that.chunks.length; i++)
+            this.chunks[i] = new Chunk(that.chunks[i]);
+        return this;
+    }
+
+    private static void intCopy(int[] src, int[] dest)
+    {
+        assert src.length == dest.length;
+        System.arraycopy(src, 0, dest, 0, src.length);
     }
 
     public String toString()

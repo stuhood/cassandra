@@ -28,7 +28,7 @@ import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.utils.obs.OpenBitSet;
 
 /** Adds a mutable index field to OpenBitSet. */
-public class BoundedBitSet extends OpenBitSet
+public class BoundedBitSet extends OpenBitSet implements Cloneable
 {
     private long index = 0;
 

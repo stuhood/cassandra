@@ -69,7 +69,7 @@ public final class Chunk
     // a type byte per entry in this chunk
     private ByteBuffer metadata = ByteBuffer.allocate(ENTRIES);
     // lazily (en/de)coded tuples
-    private final List<ByteBuffer> decodedValues = new ArrayList<ByteBuffer>(ENTRIES);
+    private final List<ByteBuffer> decodedValues;
     // client and local timestamps with null bitsets representing MIN_VALUE
     private List<Long> clientTimestamps = new ArrayList<Long>(ENTRIES);
     private BoundedBitSet clientTimestampNulls = new BoundedBitSet(ENTRIES);
@@ -80,6 +80,27 @@ public final class Chunk
     {
         this.desc = desc;
         this.type = type;
+        this.decodedValues = new ArrayList<ByteBuffer>(ENTRIES);
+    }
+
+    /** Deep copy constructor. Yuck: see caveat on Cursor's deep copy.*/
+    Chunk(Chunk chunk)
+    {
+        this.desc = chunk.desc;
+        this.type = chunk.type;
+
+        // force decoding to ensure that we can ignore the encoded content
+        this.encoded = null;
+        chunk.maybeDecode();
+        this.decoded = true;
+
+        // clone the decoded content
+        this.metadata = ByteBufferUtil.clone(chunk.metadata);
+        this.decodedValues = new ArrayList<ByteBuffer>(chunk.decodedValues);
+        this.clientTimestamps = new ArrayList<Long>(chunk.clientTimestamps);
+        this.clientTimestampNulls = (BoundedBitSet)chunk.clientTimestampNulls.clone();
+        this.localTimestamps = new ArrayList<Integer>(chunk.localTimestamps);
+        this.localTimestampNulls = (BoundedBitSet)chunk.localTimestampNulls.clone();
     }
 
     public void clear()

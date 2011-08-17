@@ -35,6 +35,7 @@ import org.apache.cassandra.db.columniterator.ChunkedSliceIterator;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.io.sstable.Chunk;
 import org.apache.cassandra.io.sstable.Component;
+import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.BytesReadTracker;
 
 class ChunkedIdentityIterator extends SSTableIdentityIterator
@@ -49,8 +50,12 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
     private int columnCount = -1;
 
     // the current chunks, flag for column consumption
-    private final Cursor cursor;
+    private Cursor cursor;
     private boolean available;
+
+    // a clone of the initial cursor and input, if the input supports reset()
+    private final Cursor cursorForReset;
+    private final RandomAccessReader inputForReset;
 
     /**
      * Used to iterate through all columns in a row.
@@ -58,11 +63,15 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
     ChunkedIdentityIterator(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, DataInput input, Cursor cursor, boolean fromRemote) throws IOException
     {
         super(cfm, partitioner, desc, fromRemote);
+
+        // if the file is resetable, clone the cursor and hold onto a handle
+        // FIXME: could do a shallow copy instead if we know the row is contained entirely within this chunk
+        cursorForReset = input instanceof RandomAccessReader ? new Cursor(cursor).reset(cursor) : null;
+        inputForReset = input instanceof RandomAccessReader ? (RandomAccessReader)input : null;
         this.input = new BytesReadTracker(input);
         this.cursor = cursor;
         this.available = false;
         this.init();
-        this.hasNext(); // eagerly load the chunk/key/cf
     }
 
     public String getPath()
@@ -102,6 +111,7 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
         else
             // empty cursor
             readSpan();
+        this.hasNext(); // eagerly load the chunk/key/cf
     }
     
     /** @return True if we opened the next valid span for this iterator. */
@@ -223,6 +233,22 @@ class ChunkedIdentityIterator extends SSTableIdentityIterator
 
     public void reset()
     {
-        throw new RuntimeException("FIXME: not implemented");
+        if (cursorForReset == null)
+            throw new UnsupportedOperationException("Only supported on seekable files");
+
+        cursor.reset(cursorForReset);
+        try
+        {
+            inputForReset.seek(inputForReset.getFilePointer() - input.getBytesRead());
+            input.reset(0);
+        }
+        catch (IOException e)
+        {
+            throw new IOError(e);
+        }
+
+        // reinitialize the cursor
+        this.available = false;
+        this.init();
     }
 }
