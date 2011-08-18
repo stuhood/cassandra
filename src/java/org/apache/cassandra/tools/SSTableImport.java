@@ -264,7 +264,7 @@ public class SSTableImport
         Map<?, ?> data = parser.readValueAs(new TypeReference<Map<?, ?>>() {});
 
         keyCountToImport = (keyCountToImport == null) ? data.size() : keyCountToImport;
-        SSTableWriter writer = new SSTableWriter(ssTablePath, keyCountToImport);
+        SSTableWriter writer = SSTableWriter.create(ssTablePath, keyCountToImport);
 
         System.out.printf("Importing %s keys...%n", keyCountToImport);
 
@@ -336,7 +336,7 @@ public class SSTableImport
         System.out.printf("Importing %s keys...%n", keyCountToImport);
 
         parser = getParser(jsonFile); // renewing parser
-        SSTableWriter writer = new SSTableWriter(ssTablePath, keyCountToImport);
+        SSTableWriter writer = SSTableWriter.create(ssTablePath, keyCountToImport);
 
         int lineNumber = 1;
         DecoratedKey prevStoredKey = null;

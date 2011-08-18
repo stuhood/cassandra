@@ -49,7 +49,7 @@ public abstract class AbstractSSTableSimpleWriter
 
     protected SSTableWriter getWriter() throws IOException
     {
-        return new SSTableWriter(
+        return SSTableWriter.create(
             makeFilename(directory, metadata.ksName, metadata.cfName),
             0, // We don't care about the bloom filter
             metadata,

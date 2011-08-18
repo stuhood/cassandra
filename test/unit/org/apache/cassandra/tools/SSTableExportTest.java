@@ -61,7 +61,7 @@ public class SSTableExportTest extends SchemaLoader
     {
         File tempSS = tempSSTableFile("Keyspace1", "Standard1");
         ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "Standard1");
-        SSTableWriter writer = new SSTableWriter(tempSS.getPath(), 2);
+        SSTableWriter writer = SSTableWriter.create(tempSS.getPath(), 2);
         
         // Add rowA
         cfamily.addColumn(new QueryPath("Standard1", null, ByteBufferUtil.bytes("colA")), ByteBufferUtil.bytes("valA"), System.currentTimeMillis());
@@ -94,7 +94,7 @@ public class SSTableExportTest extends SchemaLoader
     {
         File tempSS = tempSSTableFile("Keyspace1", "Standard1");
         ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "Standard1");
-        SSTableWriter writer = new SSTableWriter(tempSS.getPath(), 2);
+        SSTableWriter writer = SSTableWriter.create(tempSS.getPath(), 2);
         
         int nowInSec = (int)(System.currentTimeMillis() / 1000) + 42; //live for 42 seconds
         // Add rowA
@@ -142,7 +142,7 @@ public class SSTableExportTest extends SchemaLoader
     {
         File tempSS = tempSSTableFile("Keyspace1", "Super4");
         ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "Super4");
-        SSTableWriter writer = new SSTableWriter(tempSS.getPath(), 2);
+        SSTableWriter writer = SSTableWriter.create(tempSS.getPath(), 2);
         
         // Add rowA
         cfamily.addColumn(new QueryPath("Super4", ByteBufferUtil.bytes("superA"), ByteBufferUtil.bytes("colA")), ByteBufferUtil.bytes("valA"), System.currentTimeMillis());
@@ -182,7 +182,7 @@ public class SSTableExportTest extends SchemaLoader
     {
         File tempSS = tempSSTableFile("Keyspace1", "Standard1");
         ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "Standard1");
-        SSTableWriter writer = new SSTableWriter(tempSS.getPath(), 2);
+        SSTableWriter writer = SSTableWriter.create(tempSS.getPath(), 2);
         
         // Add rowA
         cfamily.addColumn(new QueryPath("Standard1", null, ByteBufferUtil.bytes("name")), ByteBufferUtil.bytes("val"), System.currentTimeMillis());
@@ -220,7 +220,7 @@ public class SSTableExportTest extends SchemaLoader
     {
         File tempSS = tempSSTableFile("Keyspace1", "Counter1");
         ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "Counter1");
-        SSTableWriter writer = new SSTableWriter(tempSS.getPath(), 2);
+        SSTableWriter writer = SSTableWriter.create(tempSS.getPath(), 2);
 
         // Add rowA
         cfamily.addColumn(null, new CounterColumn(ByteBufferUtil.bytes("colA"), 42, System.currentTimeMillis()));
@@ -247,7 +247,7 @@ public class SSTableExportTest extends SchemaLoader
     {
         File tempSS = tempSSTableFile("Keyspace1", "ValuesWithQuotes");
         ColumnFamily cfamily = ColumnFamily.create("Keyspace1", "ValuesWithQuotes");
-        SSTableWriter writer = new SSTableWriter(tempSS.getPath(), 2);
+        SSTableWriter writer = SSTableWriter.create(tempSS.getPath(), 2);
 
         // Add rowA
         cfamily.addColumn(null, new Column(ByteBufferUtil.bytes("data"), UTF8Type.instance.fromString("{\"foo\":\"bar\"}")));

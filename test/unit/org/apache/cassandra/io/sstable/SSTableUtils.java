@@ -208,7 +208,7 @@ public class SSTableUtils
         public SSTableReader writeRaw(Map<ByteBuffer, ByteBuffer> entries) throws IOException
         {
             File datafile = (dest == null) ? tempSSTableFile(ksname, cfname, generation) : new File(dest.filenameFor(Component.DATA));
-            SSTableWriter writer = new SSTableWriter(datafile.getAbsolutePath(), entries.size());
+            SSTableWriter writer = SSTableWriter.create(datafile.getAbsolutePath(), entries.size());
             SortedMap<DecoratedKey, ByteBuffer> sorted = new TreeMap<DecoratedKey, ByteBuffer>();
             for (Map.Entry<ByteBuffer, ByteBuffer> entry : entries.entrySet())
                 sorted.put(writer.partitioner.decorateKey(entry.getKey()), entry.getValue());
@@ -230,7 +230,7 @@ public class SSTableUtils
         public SSTableReader write(int expectedSize, Appender appender) throws IOException
         {
             File datafile = (dest == null) ? tempSSTableFile(ksname, cfname, generation) : new File(dest.filenameFor(Component.DATA));
-            SSTableWriter writer = new SSTableWriter(datafile.getAbsolutePath(), expectedSize);
+            SSTableWriter writer = SSTableWriter.create(datafile.getAbsolutePath(), expectedSize);
             long start = System.currentTimeMillis();
             while (appender.append(writer)) { /* pass */ }
             SSTableReader reader = writer.closeAndOpenReader();
