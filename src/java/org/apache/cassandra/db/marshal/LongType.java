@@ -154,7 +154,6 @@ public class LongType extends AbstractType<Long>
     @Override
     public ByteBuffer compress(Descriptor desc, final List<ByteBuffer> from, ByteBuffer to) throws IOException
     {
-        assert !desc.isFromTheFuture();
         // write via the LongType primitive
         return LongType.encode(new LongType.LongCollection(from.size())
         {
@@ -168,7 +167,6 @@ public class LongType extends AbstractType<Long>
     @Override
     public void decompress(Descriptor desc, ByteBuffer from, Collection<ByteBuffer> to) throws IOException
     {
-        assert !desc.isFromTheFuture();
         to.clear();
         for (long val : LongType.decode(from))
             to.add(ByteBufferUtil.bytes(val));

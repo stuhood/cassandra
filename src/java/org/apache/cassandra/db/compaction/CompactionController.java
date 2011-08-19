@@ -92,7 +92,7 @@ public class CompactionController
             return true;
 
         for (SSTableReader sstable : sstables)
-            if (!sstable.descriptor.isLatestVersion)
+            if (!sstable.descriptor.version.isLatestVersion)
                 return true;
 
         return false;

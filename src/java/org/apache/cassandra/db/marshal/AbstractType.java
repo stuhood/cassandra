@@ -133,7 +133,6 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
      */
     public ByteBuffer compress(Descriptor desc, final List<ByteBuffer> from, ByteBuffer to) throws IOException
     {
-        assert !desc.isFromTheFuture();
         // copy input buffers into a contiguous buffer, and compress them
         ByteBuffer uncompressed = ByteBuffer.allocate(256);
         for (int fromidx = 0; fromidx < from.size(); fromidx++)
@@ -161,7 +160,6 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>
      */
     public void decompress(Descriptor desc, ByteBuffer from, Collection<ByteBuffer> to) throws IOException
     {
-        assert !desc.isFromTheFuture();
         // copy into compressed buffer
         int length = from.getInt();
         byte[] compressed = new byte[length];

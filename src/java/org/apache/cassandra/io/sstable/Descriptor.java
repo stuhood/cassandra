@@ -22,9 +22,11 @@ package org.apache.cassandra.io.sstable;
 
 
 import java.io.File;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import com.google.common.base.Objects;
+import com.google.common.collect.ImmutableMap;
 
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.utils.Pair;
@@ -41,30 +43,71 @@ import static org.apache.cassandra.io.sstable.Component.separator;
 public class Descriptor
 {
     public static final String LEGACY_VERSION = "a"; // "pre-history"
-    // b (0.7.0): added version to sstable filenames
-    // c (0.7.0): bloom filter component computes hashes over raw key bytes instead of strings
-    // d (0.7.0): row size in data component becomes a long instead of int
-    // e (0.7.0): stores undecorated keys in data and index components
-    // f (0.7.0): switched bloom filter implementations in data component
-    // g (0.8): tracks flushed-at context in metadata component
-    // h (1.0): tracks max client timestamp in metadata component
     public static final String CURRENT_VERSION = "h";
+    public static final Map<String,Version> VERSIONS;
+    static
+    {
+        ImmutableMap.Builder builder = ImmutableMap.builder();
+        // b (0.7.0): added version to sstable filenames
+        builder.put("a", new Version("a", "01111110"));
+        builder.put("b", new Version("b", "01111110"));
+        // c (0.7.0): bloom filter component computes hashes over raw key bytes instead of strings
+        builder.put("c", new Version("c", "00111110"));
+        // d (0.7.0): row size in data component becomes a long instead of int
+        builder.put("d", new Version("d", "00011110"));
+        // e (0.7.0): stores undecorated keys in data and index components
+        builder.put("e", new Version("e", "00001110"));
+        // f (0.7.0): switched bloom filter implementations in data component
+        builder.put("f", new Version("f", "00000110"));
+        // g (0.8): tracks flushed-at context in metadata component
+        builder.put("g", new Version("g", "00000011"));
+        // h (1.0): tracks max client timestamp in metadata component
+        builder.put("h", new Version("h", "00000011"));
+        VERSIONS = builder.build();
+    };
 
     public final File directory;
-    public final String version;
+    public final Version version;
     public final String ksname;
     public final String cfname;
     public final int generation;
     public final boolean temporary;
     private final int hashCode;
 
-    public final boolean isLatestVersion;
-    public final boolean hasStringsInBloomFilter;
-    public final boolean hasIntRowSize;
-    public final boolean hasEncodedKeys;
-    public final boolean usesOldBloomFilter;
-    public final boolean usesHistogramAndReplayPositionStatsFile;
-    public final boolean isRowIndexed;
+    public static final class Version
+    {
+        public final String version;
+        public final boolean isLatestVersion;                           // 0
+        public final boolean hasStringsInBloomFilter;                   // 1
+        public final boolean hasIntRowSize;                             // 2
+        public final boolean hasEncodedKeys;                            // 3
+        public final boolean usesOldBloomFilter;                        // 4
+        public final boolean usesHistogramAndReplayPositionStatsFile;   // 5
+        public final boolean isRowIndexed;                              // 6
+        public final boolean hasReplayPosition;                         // 7
+        /** Takes a string representing all possible features as binary: 0/1. */
+        private Version(String version, String features)
+        {
+            assert features.length() == 8;
+            this.version = version;
+            this.isLatestVersion = features.charAt(0) == '1';
+            this.hasStringsInBloomFilter = features.charAt(1) == '1';
+            this.hasIntRowSize = features.charAt(2) == '1';
+            this.hasEncodedKeys = features.charAt(3) == '1';
+            this.usesOldBloomFilter = features.charAt(4) == '1';
+            this.usesHistogramAndReplayPositionStatsFile = features.charAt(5) == '1';
+            this.isRowIndexed = features.charAt(6) == '1';
+            this.hasReplayPosition = features.charAt(7) == '1';
+        }
+    }
+
+    public static final class UnknownVersionException extends RuntimeException
+    {
+        private UnknownVersionException(String msg)
+        {
+            super(msg);
+        }
+    }
 
     public enum TempState
     {
@@ -84,34 +127,23 @@ public class Descriptor
     /**
      * A descriptor that assumes CURRENT_VERSION.
      */
-    public Descriptor(File directory, String ksname, String cfname, int generation, boolean temp)
+    public Descriptor(File directory, String ksname, String cfname, int generation, boolean temp) throws UnknownVersionException
     {
         this(CURRENT_VERSION, directory, ksname, cfname, generation, temp);
     }
 
-    public Descriptor(String version, File directory, String ksname, String cfname, int generation, boolean temp)
+    public Descriptor(String version, File directory, String ksname, String cfname, int generation, boolean temp) throws UnknownVersionException
     {
         assert version != null && directory != null && ksname != null && cfname != null;
-        this.version = version;
+        if (!VERSIONS.containsKey(version))
+            throw new UnknownVersionException("Unreadable version '" + version + "' (known versions: " + VERSIONS.keySet() + ") for file in " + directory);
+        this.version = VERSIONS.get(version);
         this.directory = directory;
         this.ksname = ksname;
         this.cfname = cfname;
         this.generation = generation;
         temporary = temp;
         hashCode = Objects.hashCode(directory, generation, ksname, cfname);
-
-        isLatestVersion = version.compareTo(CURRENT_VERSION) == 0;
-        hasStringsInBloomFilter = version.compareTo("c") < 0;
-        hasIntRowSize = version.compareTo("d") < 0;
-        hasEncodedKeys = version.compareTo("e") < 0;
-        usesOldBloomFilter = version.compareTo("f") < 0;
-        usesHistogramAndReplayPositionStatsFile = version.compareTo("h") < 0;
-        isRowIndexed = version.compareTo("h") <= 0;
-    }
-
-    public boolean hasReplayPosition()
-    {
-        return version.compareTo("g") >= 0;
     }
 
     public String filenameFor(Component component)
@@ -126,8 +158,8 @@ public class Descriptor
         buff.append(cfname).append(separator);
         if (temporary)
             buff.append(SSTable.TEMPFILE_MARKER).append(separator);
-        if (!LEGACY_VERSION.equals(version))
-            buff.append(version).append(separator);
+        if (!LEGACY_VERSION.equals(version.version))
+            buff.append(version.version).append(separator);
         buff.append(generation);
         return buff.toString();
     }
@@ -242,7 +274,7 @@ public class Descriptor
      */
     public Descriptor asTemporary(boolean temporary)
     {
-        return new Descriptor(version, directory, ksname, cfname, generation, temporary);
+        return new Descriptor(version.version, directory, ksname, cfname, generation, temporary);
     }
 
     /**
@@ -257,11 +289,6 @@ public class Descriptor
             if (!Character.isLetter(ch) || !Character.isLowerCase(ch))
                 return false;
         return true;
-    }
-
-    public boolean isFromTheFuture()
-    {
-        return version.compareTo(CURRENT_VERSION) > 0;
     }
 
     @Override

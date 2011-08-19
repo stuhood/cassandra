@@ -110,7 +110,7 @@ public class SSTableNamesIterator extends SimpleAbstractColumnIterator implement
     private void read(SSTableReader sstable, FileDataInput file)
     throws IOException
     {
-        Filter bf = IndexHelper.defreezeBloomFilter(file, sstable.descriptor.usesOldBloomFilter);
+        Filter bf = IndexHelper.defreezeBloomFilter(file, sstable.descriptor.version.usesOldBloomFilter);
         List<IndexHelper.IndexInfo> indexList = IndexHelper.deserializeIndex(file);
 
         // we can stop early if bloom filter says none of the columns actually exist -- but,

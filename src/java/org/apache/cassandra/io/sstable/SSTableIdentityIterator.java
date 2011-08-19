@@ -54,7 +54,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
      */
     public static SSTableIdentityIterator create(CFMetaData cfm, IPartitioner partitioner, Descriptor desc, DataInput input, boolean deserializeRowHeader) throws IOException
     {
-        if (desc.isRowIndexed)
+        if (desc.version.isRowIndexed)
             return new RowIndexedIdentityIterator(cfm, partitioner, desc, input, deserializeRowHeader, true);
         throw new RuntimeException("FIXME");
     }
@@ -64,7 +64,7 @@ public abstract class SSTableIdentityIterator implements Comparable<SSTableIdent
      */
     public static SSTableIdentityIterator create(SSTableReader sstable, DataInput input, boolean deserializeRowHeader) throws IOException
     {
-        if (sstable.descriptor.isRowIndexed)
+        if (sstable.descriptor.version.isRowIndexed)
             return new RowIndexedIdentityIterator(sstable.metadata, sstable.partitioner, sstable.descriptor, input, deserializeRowHeader, false);
         throw new RuntimeException("FIXME");
     }

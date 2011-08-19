@@ -93,7 +93,7 @@ class RowIndexedIdentityIterator extends SSTableIdentityIterator
                 {
                     try
                     {
-                        IndexHelper.defreezeBloomFilter(file, dataSize, descriptor.usesOldBloomFilter);
+                        IndexHelper.defreezeBloomFilter(file, dataSize, descriptor.version.usesOldBloomFilter);
                     }
                     catch (Exception e)
                     {

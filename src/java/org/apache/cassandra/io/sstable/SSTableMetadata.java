@@ -195,12 +195,12 @@ public class SSTableMetadata
                 logger.debug("Load metadata for {}", descriptor);
                 dis = new DataInputStream(new BufferedInputStream(new FileInputStream(statsFile)));
 
-                if (!descriptor.usesHistogramAndReplayPositionStatsFile)
+                if (!descriptor.version.usesHistogramAndReplayPositionStatsFile)
                   return deserialize(dis);
 
                 EstimatedHistogram rowSizes = EstimatedHistogram.serializer.deserialize(dis);
                 EstimatedHistogram columnCounts = EstimatedHistogram.serializer.deserialize(dis);
-                ReplayPosition replayPosition = descriptor.hasReplayPosition()
+                ReplayPosition replayPosition = descriptor.version.hasReplayPosition
                                               ? ReplayPosition.serializer.deserialize(dis)
                                               : ReplayPosition.NONE;
 

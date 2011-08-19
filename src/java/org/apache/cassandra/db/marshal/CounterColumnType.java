@@ -93,8 +93,6 @@ public class CounterColumnType extends AbstractCommutativeType
     @Override
     public ByteBuffer compress(Descriptor desc, final List<ByteBuffer> from, ByteBuffer to) throws IOException
     {
-        assert !desc.isFromTheFuture();
-
         // one pass to collect and sort nodeids
         TreeSet<NodeId> nodes = new TreeSet<NodeId>();
         List<ContextState> contexts = new ArrayList<ContextState>(from.size());
@@ -169,7 +167,6 @@ public class CounterColumnType extends AbstractCommutativeType
     @Override
     public void decompress(Descriptor desc, ByteBuffer from, Collection<ByteBuffer> to) throws IOException
     {
-        assert !desc.isFromTheFuture();
         // consume nodeids into a (implicitly sorted) list
         int nodeIdCount = from.getShort();
         int nodeIdsLength = nodeIdCount * NodeId.LENGTH;

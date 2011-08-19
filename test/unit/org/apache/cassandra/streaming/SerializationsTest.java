@@ -137,7 +137,7 @@ public class SerializationsTest extends AbstractSerializationsTester
     
     private static PendingFile makePendingFile(boolean sst, int numSecs, OperationType op)
     {
-        Descriptor desc = new Descriptor("z", new File("path/doesn't/matter"), "Keyspace1", "Standard1", 23, false);
+        Descriptor desc = new Descriptor(Descriptor.CURRENT_VERSION, new File("path/doesn't/matter"), "Keyspace1", "Standard1", 23, false);
         List<Pair<Long, Long>> sections = new ArrayList<Pair<Long, Long>>();
         for (int i = 0; i < numSecs; i++)
             sections.add(new Pair<Long, Long>(new Long(i), new Long(i * i)));
