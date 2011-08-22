@@ -37,6 +37,7 @@ import org.apache.cassandra.db.DefsTable;
 import org.apache.cassandra.db.Table;
 import org.apache.cassandra.db.migration.Migration;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.MmappedSegmentedFile;
 import org.apache.cassandra.locator.*;
@@ -200,6 +201,15 @@ public class DatabaseDescriptor
             catch (Exception e)
             {
                 throw new ConfigurationException("Invalid partitioner class " + conf.partitioner);
+            }
+
+            if (conf.write_sstable_version == null)
+            {
+                conf.write_sstable_version = Descriptor.CURRENT_VERSION;
+            }
+            else if (!Descriptor.versionValidate(conf.write_sstable_version))
+            {
+                throw new ConfigurationException("Unknown SSTable version: " + conf.write_sstable_version);
             }
 
             /* phi convict threshold for FailureDetector */
@@ -566,6 +576,11 @@ public class DatabaseDescriptor
     public static IPartitioner getPartitioner()
     {
         return partitioner;
+    }
+    
+    public static String getWriteSSTableVersion()
+    {
+        return conf.write_sstable_version;
     }
     
     public static IEndpointSnitch getEndpointSnitch()

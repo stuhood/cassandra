@@ -675,7 +675,7 @@ public class ColumnFamilyStoreTest extends CleanupHelper
 
         for (int version = 1; version <= 2; ++version)
         {
-            Descriptor desc = new Descriptor(backupDir, "Keyspace2", "Standard1", version, false);
+            Descriptor desc = new Descriptor(Descriptor.CURRENT_VERSION, backupDir, "Keyspace2", "Standard1", version, false);
             for (Component c : new Component[]{ Component.DATA, Component.PRIMARY_INDEX, Component.FILTER, Component.STATS })
                 assertTrue("can not find backedup file:" + desc.filenameFor(c), new File(desc.filenameFor(c)).exists());
         }

@@ -612,7 +612,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public String getTempSSTablePath(String directory)
     {
-        return getTempSSTablePath(directory, Descriptor.CURRENT_VERSION);
+        return getTempSSTablePath(directory, DatabaseDescriptor.getWriteSSTableVersion());
     }
 
     /** flush the given memtable and swap in a new one for its CFS, if it hasn't been frozen already.  threadsafe. */

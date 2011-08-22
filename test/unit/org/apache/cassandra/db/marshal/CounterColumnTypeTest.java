@@ -43,7 +43,7 @@ public class CounterColumnTypeTest
     private static final int COUNT = 10000;
 
     private static final CounterContext CC = CounterContext.instance();
-    private static final Descriptor DESC = new Descriptor(new File(""), "ks", "cf", 1, false);
+    private static final Descriptor DESC = new Descriptor(Descriptor.CURRENT_VERSION, new File(""), "ks", "cf", 1, false);
     // sets of contexts containing deltas and non deltas for 2 nodes
     private static final List<ByteBuffer> SIMPLE = new ArrayList<ByteBuffer>();
     private static final List<ByteBuffer> COMPLEX = new ArrayList<ByteBuffer>();

@@ -35,7 +35,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class LongTypeTest
 {
-    private static final Descriptor DESC = new Descriptor(new File(""), "ks", "cf", 1, false);
+    private static final Descriptor DESC = new Descriptor(Descriptor.CURRENT_VERSION, new File(""), "ks", "cf", 1, false);
 
     private ByteBuffer compress(List<ByteBuffer> contexts) throws Exception
     {

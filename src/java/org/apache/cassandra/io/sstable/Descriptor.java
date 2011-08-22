@@ -124,14 +124,6 @@ public class Descriptor
         }
     }
 
-    /**
-     * A descriptor that assumes CURRENT_VERSION.
-     */
-    public Descriptor(File directory, String ksname, String cfname, int generation, boolean temp) throws UnknownVersionException
-    {
-        this(CURRENT_VERSION, directory, ksname, cfname, generation, temp);
-    }
-
     public Descriptor(String version, File directory, String ksname, String cfname, int generation, boolean temp) throws UnknownVersionException
     {
         assert version != null && directory != null && ksname != null && cfname != null;
@@ -282,7 +274,7 @@ public class Descriptor
      * @return True if the given version string is not empty, and
      * contains all lowercase letters, as defined by java.lang.Character.
      */
-    static boolean versionValidate(String ver)
+    public static boolean versionValidate(String ver)
     {
         if (ver.length() < 1) return false;
         for (char ch : ver.toCharArray())

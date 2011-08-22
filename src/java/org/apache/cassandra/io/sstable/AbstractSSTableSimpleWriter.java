@@ -79,7 +79,8 @@ public abstract class AbstractSSTableSimpleWriter
         int maxGen = 0;
         for (Descriptor desc : existing)
             maxGen = Math.max(maxGen, desc.generation);
-        return new Descriptor(directory, keyspace, columnFamily, maxGen + 1, false).filenameFor(Component.DATA);
+        // NB: cannot use configuration to determine which sstable version to write
+        return new Descriptor(Descriptor.CURRENT_VERSION, directory, keyspace, columnFamily, maxGen + 1, false).filenameFor(Component.DATA);
     }
 
     /**

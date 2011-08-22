@@ -59,6 +59,10 @@ authority: org.apache.cassandra.auth.AllowAllAuthority
 # partitioners and token selection.
 partitioner: org.apache.cassandra.dht.RandomPartitioner
 
+# Forces all new sstables to be written with the given version: this will usually only
+# be useful for developers. Leave unset to write the default/latest/trusted version
+# write_sstable_version: ZZ
+
 # directories where Cassandra should store data on disk.
 data_file_directories:
     - /var/lib/cassandra/data

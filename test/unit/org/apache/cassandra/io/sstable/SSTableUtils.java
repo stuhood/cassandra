@@ -69,7 +69,7 @@ public class SSTableUtils
         File tabledir = new File(tempdir, tablename);
         tabledir.mkdir();
         tabledir.deleteOnExit();
-        File datafile = new File(new Descriptor(tabledir, tablename, cfname, generation, false).filenameFor("Data.db"));
+        File datafile = new File(new Descriptor(Descriptor.CURRENT_VERSION, tabledir, tablename, cfname, generation, false).filenameFor("Data.db"));
         if (!datafile.createNewFile())
             throw new IOException("unable to create file " + datafile);
         datafile.deleteOnExit();

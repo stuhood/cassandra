@@ -32,6 +32,9 @@ public class Config
     /* Hashing strategy Random or OPHF */
     public String partitioner;
     
+    // forces the given sstable version to be written: if unset, the 'latest' version is used
+    public String write_sstable_version = null;
+
     public Boolean auto_bootstrap = true;
     public Boolean hinted_handoff_enabled = true;
     public Integer max_hint_window_in_ms = Integer.MAX_VALUE;
