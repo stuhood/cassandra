@@ -37,6 +37,7 @@ import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.CloseableIterator;
 import org.apache.cassandra.utils.MergeIterator;
+import org.apache.cassandra.utils.Throttle;
 
 public class CompactionIterable
 implements Iterable<AbstractCompactedRow>, CompactionInfo.Holder
@@ -49,18 +50,11 @@ implements Iterable<AbstractCompactedRow>, CompactionInfo.Holder
     protected final CompactionType type;
     private final List<SSTableScanner> scanners;
     protected final CompactionController controller;
+    private final Throttle throttle;
 
     private long totalBytes;
     private long bytesRead;
     private long row;
-
-    // the bytes that had been compacted the last time we delayed to throttle,
-    // and the time in milliseconds when we last throttled
-    private long bytesAtLastDelay;
-    private long timeAtLastDelay;
-
-    // current target bytes to compact per millisecond
-    private int targetBytesPerMS = -1;
 
     public CompactionIterable(CompactionType type, Iterable<SSTableReader> sstables, CompactionController controller) throws IOException
     {
@@ -76,6 +70,21 @@ implements Iterable<AbstractCompactedRow>, CompactionInfo.Holder
         totalBytes = bytesRead = 0;
         for (SSTableScanner scanner : scanners)
             totalBytes += scanner.getFileLength();
+        this.throttle = new Throttle(this.toString(), new Throttle.ThroughputFunction()
+        {
+            /** @return Instantaneous throughput target in bytes per millisecond. */
+            public int targetThroughput()
+            {
+                if (DatabaseDescriptor.getCompactionThroughputMbPerSec() < 1 || StorageService.instance.isBootstrapMode())
+                    // throttling disabled
+                    return 0;
+                // total throughput
+                int totalBytesPerMS = DatabaseDescriptor.getCompactionThroughputMbPerSec() * 1024 * 1024 / 1000;
+                // per stream throughput
+                int targetBytesPerMS = totalBytesPerMS / Math.max(1, CompactionManager.instance.getActiveCompactions());
+                return targetBytesPerMS;
+            }
+        });
     }
 
     protected static List<SSTableScanner> getScanners(Iterable<SSTableReader> sstables) throws IOException
@@ -98,47 +107,6 @@ implements Iterable<AbstractCompactedRow>, CompactionInfo.Holder
     public CloseableIterator<AbstractCompactedRow> iterator()
     {
         return MergeIterator.get(scanners, ICOMP, new Reducer());
-    }
-
-    private void throttle()
-    {
-        if (DatabaseDescriptor.getCompactionThroughputMbPerSec() < 1 || StorageService.instance.isBootstrapMode())
-            // throttling disabled
-            return;
-        int totalBytesPerMS = DatabaseDescriptor.getCompactionThroughputMbPerSec() * 1024 * 1024 / 1000;
-
-        // bytes compacted and time passed since last delay
-        long bytesSinceLast = bytesRead - bytesAtLastDelay;
-        long msSinceLast = System.currentTimeMillis() - timeAtLastDelay;
-
-        // determine the current target
-        int newTarget = totalBytesPerMS /
-            Math.max(1, CompactionManager.instance.getActiveCompactions());
-        if (newTarget != targetBytesPerMS)
-            logger.debug("{} now compacting at {} bytes/ms.", this, newTarget);
-        targetBytesPerMS = newTarget;
-
-        // the excess bytes that were compacted in this period
-        long excessBytes = bytesSinceLast - msSinceLast * targetBytesPerMS;
-
-        // the time to delay to recap the deficit
-        long timeToDelay = excessBytes / Math.max(1, targetBytesPerMS);
-        if (timeToDelay > 0)
-        {
-            if (logger.isTraceEnabled())
-                logger.trace(String.format("Compacted %d bytes in %d ms: throttling for %d ms",
-                                           bytesSinceLast, msSinceLast, timeToDelay));
-            try
-            {
-                Thread.sleep(timeToDelay);
-            }
-            catch (InterruptedException e)
-            {
-                throw new AssertionError(e);
-            }
-        }
-        bytesAtLastDelay = bytesRead;
-        timeAtLastDelay = System.currentTimeMillis();
     }
 
     public String toString()
@@ -185,7 +153,7 @@ implements Iterable<AbstractCompactedRow>, CompactionInfo.Holder
                     {
                         bytesRead += scanner.getFilePointer();
                     }
-                    throttle();
+                    throttle.throttle(bytesRead);
                 }
             }
         }
