@@ -74,7 +74,7 @@ public final class MessagingService implements MessagingServiceMBean
     private final Map<StorageService.Verb, IVerbHandler> verbHandlers_;
 
     /* Thread pool to handle messaging write activities */
-    private final ExecutorService streamExecutor_;
+    private final DebuggableThreadPoolExecutor streamExecutor_;
 
     private final NonBlockingHashMap<InetAddress, OutboundTcpConnectionPool> connectionManagers_ = new NonBlockingHashMap<InetAddress, OutboundTcpConnectionPool>();
 
@@ -417,6 +417,12 @@ public final class MessagingService implements MessagingServiceMBean
     {
         /* Streaming asynchronously on streamExector_ threads. */
         streamExecutor_.execute(new FileStreamTask(header, to, DatabaseDescriptor.getEncryptionOptions()));
+    }
+
+    /** The count of active outbound stream tasks. */
+    public int getActiveStreamsOutbound()
+    {
+        return streamExecutor_.getActiveCount();
     }
 
     public void register(ILatencySubscriber subcriber)
